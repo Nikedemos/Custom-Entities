@@ -15,7 +15,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.0")]
+    [Info("Custom Entities", "Nikedemos", "1.0.1")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -746,7 +746,7 @@ namespace Oxide.Plugins
 
                 BaseEntity newEntity = newGo.AddComponent(recipe.EntityType) as BaseEntity;
 
-                AddToGameManifest(recipe.FullPrefabName, newGo);
+                AddToGameManifest(recipe.FullPrefabName, newGo, recipe.EnableInSpawnCommand);
 
                 AddToPreprocessed(recipe.FullPrefabName, newGo);
 
@@ -791,7 +791,7 @@ namespace Oxide.Plugins
                 }
 
                 RemoveFromPreProcessed(recipe.FullPrefabName);
-                RemoveFromGameManifest(recipe.FullPrefabName);
+                RemoveFromGameManifest(recipe.FullPrefabName, recipe.EnableInSpawnCommand);
                 RemoveFromStringPool(recipe.FullPrefabName);
 
                 //kill the prototype                
@@ -912,8 +912,17 @@ namespace Oxide.Plugins
                 }
             }
 
-            private static void AddToGameManifest(string fullPrefabName, GameObject newGo)
+            private static void AddToGameManifest(string fullPrefabName, GameObject newGo, bool alsoAddToCurrentEntities)
             {
+                GameManifest.pathToGuid.Add(fullPrefabName, fullPrefabName);
+                GameManifest.guidToPath.Add(fullPrefabName, fullPrefabName);
+                GameManifest.guidToObject.Add(fullPrefabName, newGo);
+
+                if (!alsoAddToCurrentEntities)
+                {
+                    return;
+                }
+
                 _gameManifestEntityList.Clear();
 
                 for (int i = 0; i < GameManifest.Current.entities.Length; i++)
@@ -927,13 +936,19 @@ namespace Oxide.Plugins
 
                 UpdateGameManifestArray();
 
-                GameManifest.pathToGuid.Add(fullPrefabName, fullPrefabName);
-                GameManifest.guidToPath.Add(fullPrefabName, fullPrefabName);
-                GameManifest.guidToObject.Add(fullPrefabName, newGo);
             }
 
-            private static void RemoveFromGameManifest(string fullPrefabName)
+            private static void RemoveFromGameManifest(string fullPrefabName, bool alsoRemoveFromCurrentEntities)
             {
+                GameManifest.pathToGuid.Remove(fullPrefabName);
+                GameManifest.guidToPath.Remove(fullPrefabName);
+                GameManifest.guidToObject.Remove(fullPrefabName);
+
+                if (!alsoRemoveFromCurrentEntities)
+                {
+                    return;
+                }
+
                 _gameManifestEntityList.Clear();
 
                 for (int i = 0; i < GameManifest.Current.entities.Length; i++)
@@ -950,9 +965,6 @@ namespace Oxide.Plugins
 
                 UpdateGameManifestArray();
 
-                GameManifest.pathToGuid.Remove(fullPrefabName);
-                GameManifest.guidToPath.Remove(fullPrefabName);
-                GameManifest.guidToObject.Remove(fullPrefabName);
             }
 
             private static void UpdateGameManifestArray()
@@ -1521,21 +1533,24 @@ namespace Oxide.Plugins
 
         public struct CustomPrefabRecipe : IEquatable<CustomPrefabRecipe>
         {
-            public string ShortPrefabName;
-            public string FullPrefabName;
-            public Rust.Layer Layer;
+            public readonly string ShortPrefabName;
+            public readonly string FullPrefabName;
+            public readonly Rust.Layer Layer;
 
-            public Type EntityType;
+            public readonly bool EnableInSpawnCommand;
 
-            public CustomPrefabBaseCombat BaseCombat;
+            public readonly Type EntityType;
 
-            public CustomPrefabRecipe(string shortName, Type entityType, Rust.Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null)
+            public readonly CustomPrefabBaseCombat BaseCombat;
+
+            public CustomPrefabRecipe(string shortName, Type entityType, Rust.Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true)
             {
                 ShortPrefabName = shortName;
                 FullPrefabName = SanitizedFullPrefabName(shortName);
                 EntityType = entityType;
                 Layer = layer;
                 BaseCombat = baseCombat;
+                EnableInSpawnCommand = enableInSpawnCommand;
             }
 
             public static bool operator ==(CustomPrefabRecipe lhs, CustomPrefabRecipe rhs)

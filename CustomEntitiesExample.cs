@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities Example", "Nikedemos", "1.0.0")]
+    [Info("Custom Entities Example", "Nikedemos", "1.0.1")]
     [Description("Sample dependency for Custom Entities that registers a bundle with some test entities")]
     public class CustomEntitiesExample : RustPlugin
     {
@@ -100,7 +100,7 @@ namespace Oxide.Plugins
         public static void RegisterAndLoadTestBundle()
         {
             WaypointEntityRecipe = new CustomEntities.CustomPrefabRecipe("waypoint", typeof(VisualWaypointEntity), (Rust.Layer)LAYER_DEFAULT);
-            WaypointBrushRecipe = new CustomEntities.CustomPrefabRecipe("waypoint_brush", typeof(WaypointBrushEntity), (Rust.Layer)LAYER_IGNORE_RAYCAST);
+            WaypointBrushRecipe = new CustomEntities.CustomPrefabRecipe("waypoint_brush", typeof(WaypointBrushEntity), (Rust.Layer)LAYER_IGNORE_RAYCAST, null, false);
 
             VisualWaypointEntity.Graphs = new Dictionary<ulong, List<VisualWaypointEntity>>();
             VisualWaypointEntity.AllWaypoints = new List<VisualWaypointEntity>();
