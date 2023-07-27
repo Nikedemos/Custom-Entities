@@ -12,10 +12,11 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using UnityEngine;
+using UnityEngine.Assertions;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.1")]
+    [Info("Custom Entities", "Nikedemos", "1.0.2")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -796,7 +797,7 @@ namespace Oxide.Plugins
 
                 //kill the prototype                
 
-                BaseEntity prototypeEntity = go.GetComponent<BaseEntity>();                
+                BaseEntity prototypeEntity = go.GetComponent<BaseEntity>();
 
                 (prototypeEntity as ICustomEntity).OnCustomPrefabPrototypeEntityUnregistered();
 
@@ -1201,10 +1202,6 @@ namespace Oxide.Plugins
             internal void Save()
             {
                 int entityAmount = CustomEntitySaveList.Count;
-                if (entityAmount == 0)
-                {
-                    return;
-                }
 
                 int countVanillaAndCustom = 0;
 
@@ -1450,7 +1447,7 @@ namespace Oxide.Plugins
                                         }
 
                                         key.Spawn();
-                                        key.Load(info);                                       
+                                        key.Load(info);
 
                                         if (key.IsValid())
                                         {
@@ -1613,7 +1610,7 @@ namespace Oxide.Plugins
         {
             CustomHandler Handler { get; set; }
             List<BaseEntity> SaveListInDataFile { get; set; }
-            bool IsDestroyed { get;}
+            bool IsDestroyed { get; }
 
             bool HasDefaultInventory { get; }
 
@@ -1638,7 +1635,7 @@ namespace Oxide.Plugins
             void OnCustomPrefabPrototypeEntityRegistered();
             void OnCustomPrefabPrototypeEntityUnregistered();
 
-            void OnParentChanging(BaseEntity oldParent,  BaseEntity newParent);
+            void OnParentChanging(BaseEntity oldParent, BaseEntity newParent);
 
             void Awake();
 
@@ -1857,7 +1854,7 @@ namespace Oxide.Plugins
             {
                 if (_ownerEntityAsInterface.HasDefaultInventory)
                 {
-                    _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, false, _ownerEntityAsInterface.DefaultInventoryCapacity);              
+                    _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, false, _ownerEntityAsInterface.DefaultInventoryCapacity);
                 }
             }
 
@@ -2103,12 +2100,12 @@ namespace Oxide.Plugins
 
             public virtual void SaveExtra(Stream stream, BinaryWriter writer)
             {
-                
+
             }
 
             public virtual void LoadExtra(Stream stream, BinaryReader reader)
             {
-                
+
             }
 
 
@@ -2320,6 +2317,137 @@ namespace Oxide.Plugins
             }
         }
         #endregion
+
+        #region CUSTOM STORAGE CONTAINER
+        public class CustomStorageContainer : CustomEntities.CustomBaseCombatEntity
+        {
+            public virtual string panelName => "generic";
+            public virtual bool isLootable => true;
+            public virtual bool onlyOneUser => false;
+            public override bool HasDefaultInventory => true;
+            public override int DefaultInventoryCapacity => 2;
+            public override bool EnableSavingToDiskByDefault => false;
+            public override bool OnRpcMessage(global::BasePlayer player, uint rpc, Message msg)
+            {
+                using (TimeWarning.New("StorageContainer.OnRpcMessage", 0))
+                {
+                    if (rpc == 331989034U && player != null)
+                    {
+                        Assert.IsTrue(player.isServer, "SV_RPC Message is using a clientside player!");
+                        if (ConVar.Global.developer > 2)
+                        {
+                            Debug.Log("SV_RPCMessage: " + player + " - RPC_OpenLoot ");
+                        }
+                        using (TimeWarning.New("RPC_OpenLoot", 0))
+                        {
+                            using (TimeWarning.New("Conditions", 0))
+                            {
+                                if (!global::BaseEntity.RPC_Server.IsVisible.Test(331989034U, "RPC_OpenLoot", this, player, 3f))
+                                {
+                                    return true;
+                                }
+                            }
+                            try
+                            {
+                                using (TimeWarning.New("Call", 0))
+                                {
+                                    global::BaseEntity.RPCMessage rpc2 = new global::BaseEntity.RPCMessage
+                                    {
+                                        connection = msg.connection,
+                                        player = player,
+                                        read = msg.read
+                                    };
+                                    this.RPC_OpenLoot(rpc2);
+                                }
+                            }
+                            catch (Exception exception)
+                            {
+                                Debug.LogException(exception);
+                                player.Kick("RPC Error in RPC_OpenLoot");
+                            }
+                        }
+                        return true;
+                    }
+                }
+                return base.OnRpcMessage(player, rpc, msg);
+            }
+            private void RPC_OpenLoot(global::BaseEntity.RPCMessage rpc)
+            {
+                if (!this.isLootable)
+                {
+                    return;
+                }
+                global::BasePlayer player = rpc.player;
+                if (!player || !player.CanInteract())
+                {
+                    return;
+                }
+                this.PlayerOpenLoot(player, "", true);
+            }
+
+            public virtual bool CanOpenLootPanel(global::BasePlayer player, string panelName)
+            {
+                if (!this.CanBeLooted(player))
+                {
+                    return false;
+                }
+                global::BaseLock baseLock = base.GetSlot(global::BaseEntity.Slot.Lock) as global::BaseLock;
+                if (baseLock != null && !baseLock.OnTryToOpen(player))
+                {
+                    player.ChatMessage("It is locked...");
+                    return false;
+                }
+                return true;
+            }
+            public virtual void AddContainers(global::PlayerLoot loot)
+            {
+                loot.AddContainer(this.DefaultInventory);
+            }
+            public virtual bool PlayerOpenLoot(global::BasePlayer player, string panelToOpen = "", bool doPositionChecks = true)
+            {
+                if (Interface.CallHook("CanLootEntity", player, this) != null)
+                {
+                    return false;
+                }
+                if (base.IsLocked())
+                {
+                    player.ShowToast(global::GameTip.Styles.Red_Normal, global::StorageContainer.LockedMessage, Array.Empty<string>());
+                    return false;
+                }
+                if (this.onlyOneUser && base.IsOpen())
+                {
+                    player.ShowToast(global::GameTip.Styles.Red_Normal, global::StorageContainer.InUseMessage, Array.Empty<string>());
+                    return false;
+                }
+                if (panelToOpen == "")
+                {
+                    panelToOpen = this.panelName;
+                }
+                if (!this.CanOpenLootPanel(player, panelToOpen))
+                {
+                    return false;
+                }
+                if (player.inventory.loot.StartLootingEntity(this, doPositionChecks))
+                {
+                    base.SetFlag(global::BaseEntity.Flags.Open, true, false, true);
+                    this.AddContainers(player.inventory.loot);
+                    player.inventory.loot.SendImmediate();
+                    player.ClientRPCPlayer<string>(null, player, "RPC_OpenLootPanel", panelToOpen);
+                    base.SendNetworkUpdate(global::BasePlayer.NetworkQueue.Update);
+                    return true;
+                }
+                return false;
+            }
+
+            public virtual void PlayerStoppedLooting(global::BasePlayer player)
+            {
+                Interface.CallHook("OnLootEntityEnd", player, this);
+                base.SetFlag(global::BaseEntity.Flags.Open, false, false, true);
+                base.SendNetworkUpdate(global::BasePlayer.NetworkQueue.Update);
+            }
+        }
+        #endregion
+
 
         #region DRAWING
 
@@ -2636,7 +2764,7 @@ namespace Oxide.Plugins
         }
 
         public static void DestroyClientsideForAll(BaseNetworkable entity, bool networkUpdateAfterwards = true) => DestroyClientsideForSendInfo(entity, new SendInfo(Net.sv.connections), networkUpdateAfterwards);
-    
+
         public static void DestroyClientsideForSendInfo(BaseNetworkable entity, SendInfo sendInfo, bool networkUpdateAfterwards = true)
         {
             if (entity.net == null)
