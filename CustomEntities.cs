@@ -1,4 +1,5 @@
-﻿using Facepunch;
+﻿using Epic.OnlineServices.UserInfo;
+using Facepunch;
 using Network;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
@@ -16,7 +17,7 @@ using UnityEngine.Assertions;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.2")]
+    [Info("Custom Entities", "Nikedemos", "1.0.4")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -28,10 +29,14 @@ namespace Oxide.Plugins
 
         public const string PREFAB_SPHERE = "assets/prefabs/visualization/sphere.prefab";
 
+        public const string PREFAB_WOOD_STORAGE_BOX = "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab";
+
         public const string PREFAB_FX_IMPACT_METAL_BLUNT = "assets/bundled/prefabs/fx/impacts/blunt/metal/metal1.prefab";
         public const string PREFAB_FX_IMPACT_METAL_SLASH = "assets/bundled/prefabs/fx/impacts/slash/metal/metal1.prefab";
         public const string PREFAB_FX_IMPACT_METAL_STAB = "assets/bundled/prefabs/fx/impacts/stab/metal/metal1.prefab";
         public const string PREFAB_FX_IMPACT_METAL_BULLET = "assets/bundled/prefabs/fx/impacts/bullet/metal/metal1.prefab";
+
+        public const string PREFAB_PLAYER = "assets/prefabs/player/player.prefab";
 
         public const string PREFAB_FX_IMPACT_METAL_PHYSICAL = "assets/bundled/prefabs/fx/impacts/physics/phys-impact-metal-hollow-hard.prefab";
         public const string PREFAB_FX_EXPLOSION = "assets/bundled/prefabs/fx/impacts/additive/explosion.prefab";
@@ -50,7 +55,7 @@ namespace Oxide.Plugins
         public static bool Unloading = false;
         public static Effect ReusableEffect;
 
-        public static readonly ReadOnlyDictionary<Rust.DamageType, float> DEFAULT_PROTECTION_AMOUNTS = new ReadOnlyDictionary<Rust.DamageType, float>(new Dictionary<Rust.DamageType, float>
+        public static readonly ReadOnlyDictionary<DamageType, float> DEFAULT_PROTECTION_AMOUNTS = new ReadOnlyDictionary<DamageType, float>(new Dictionary<DamageType, float>
         {
             [DamageType.Generic] = 0F, //Generic
             [DamageType.Hunger] = 0F, //Hunger
@@ -764,6 +769,15 @@ namespace Oxide.Plugins
                 _entityPrefabNameFieldInfo.SetValue(newEntity, recipe.FullPrefabName);
 
                 ICustomEntity asInterface = (newEntity as ICustomEntity);
+
+
+                //0xF ran here
+                var tryFindPrototype = TryGetPreprocessedPrototypeFromVanilla(asInterface.DefaultClientsideFullPrefabName());
+
+                if (tryFindPrototype != null)
+                {
+                    newEntity.bounds = tryFindPrototype.bounds;
+                }
 
                 asInterface.SaveListInDataFile = data.CustomEntitySaveList;
 
@@ -1532,7 +1546,7 @@ namespace Oxide.Plugins
         {
             public readonly string ShortPrefabName;
             public readonly string FullPrefabName;
-            public readonly Rust.Layer Layer;
+            public readonly Layer Layer;
 
             public readonly bool EnableInSpawnCommand;
 
@@ -1540,7 +1554,7 @@ namespace Oxide.Plugins
 
             public readonly CustomPrefabBaseCombat BaseCombat;
 
-            public CustomPrefabRecipe(string shortName, Type entityType, Rust.Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true)
+            public CustomPrefabRecipe(string shortName, Type entityType, Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true)
             {
                 ShortPrefabName = shortName;
                 FullPrefabName = SanitizedFullPrefabName(shortName);
@@ -1614,7 +1628,10 @@ namespace Oxide.Plugins
 
             bool HasDefaultInventory { get; }
 
+            bool DefaultInventoryHandledByBaseType { get; }
+
             int DefaultInventoryCapacity { get; }
+
 
             void OnDefaultInventoryPreAnnihilation();
 
@@ -1624,7 +1641,7 @@ namespace Oxide.Plugins
 
             void OnItemAddedOrRemoved(Item item, bool added);
 
-            void OnInventoryDirty();
+            void OnDefaultInventoryDirty();
 
             ItemContainer DefaultInventory { get; set; }
             string PrefabName { get; }
@@ -1852,23 +1869,28 @@ namespace Oxide.Plugins
 
             internal void PreServerLoad()
             {
-                if (_ownerEntityAsInterface.HasDefaultInventory)
+                if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
-                    _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, false, _ownerEntityAsInterface.DefaultInventoryCapacity);
+                    return;
                 }
+
+                _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, false, _ownerEntityAsInterface.DefaultInventoryCapacity);
+                
             }
 
             internal void ServerInit()
             {
                 EnableSavingToDisk = _ownerEntityAsInterface.EnableSavingToDiskByDefault; //
 
-                if (_ownerEntityAsInterface.HasDefaultInventory)
+                if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
-                    if (_ownerEntityAsInterface.DefaultInventory == null)
-                    {
-                        _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, true, _ownerEntityAsInterface.DefaultInventoryCapacity);
-                        _ownerEntityAsInterface.OnDefaultInventoryFirstCreated();
-                    }
+                    return;
+                }
+
+                if (_ownerEntityAsInterface.DefaultInventory == null)
+                {
+                    _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, true, _ownerEntityAsInterface.DefaultInventoryCapacity);
+                    _ownerEntityAsInterface.OnDefaultInventoryFirstCreated();
                 }
             }
 
@@ -1876,17 +1898,19 @@ namespace Oxide.Plugins
             {
                 if (info.forDisk)
                 {
-                    if (_ownerEntityAsInterface.HasDefaultInventory)
+                    if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                     {
-                        if (_ownerEntityAsInterface.DefaultInventory != null)
-                        {
-                            info.msg.storageBox = Facepunch.Pool.Get<ProtoBuf.StorageBox>();
-                            info.msg.storageBox.contents = _ownerEntityAsInterface.DefaultInventory.Save();
-                        }
-                        else
-                        {
-                            Debug.LogWarning("Assigned storage container is null!");
-                        }
+                        return;
+                    }
+
+                    if (_ownerEntityAsInterface.DefaultInventory != null)
+                    {
+                        info.msg.storageBox = Pool.Get<ProtoBuf.StorageBox>();
+                        info.msg.storageBox.contents = _ownerEntityAsInterface.DefaultInventory.Save();
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Assigned storage container is null!");
                     }
 
                     return;
@@ -1900,19 +1924,21 @@ namespace Oxide.Plugins
 
             internal void Load(BaseNetworkable.LoadInfo info)
             {
-                if (_ownerEntityAsInterface.HasDefaultInventory)
+                if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
-                    if (info.msg.storageBox != null)
+                    return;
+                }
+
+                if (info.msg.storageBox != null)
+                {
+                    if (_ownerEntityAsInterface.DefaultInventory != null)
                     {
-                        if (_ownerEntityAsInterface.DefaultInventory != null)
-                        {
-                            _ownerEntityAsInterface.DefaultInventory.Load(info.msg.storageBox.contents);
-                            _ownerEntityAsInterface.DefaultInventory.capacity = _ownerEntityAsInterface.DefaultInventoryCapacity;
-                        }
-                        else
-                        {
-                            Debug.LogWarning("Assigned storage container is null!");
-                        }
+                        _ownerEntityAsInterface.DefaultInventory.Load(info.msg.storageBox.contents);
+                        _ownerEntityAsInterface.DefaultInventory.capacity = _ownerEntityAsInterface.DefaultInventoryCapacity;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Assigned storage container is null!");
                     }
                 }
             }
@@ -1934,6 +1960,9 @@ namespace Oxide.Plugins
 
             internal void DestroyShared()
             {
+                //I think this is th eonly part that doesn't care whether vanilla handles it or not!
+                //Annihilation is important. We need to get rid of all those nasty entities.
+
                 if (_ownerEntityAsInterface.HasDefaultInventory)
                 {
                     //this gives you a chance to move, duplicate, analyse or w/e
@@ -1978,7 +2007,7 @@ namespace Oxide.Plugins
             public void OnInventoryDirty()
             {
                 _ownerEntity.InvalidateNetworkCache();
-                _ownerEntityAsInterface.OnInventoryDirty();
+                _ownerEntityAsInterface.OnDefaultInventoryDirty();
             }
 
             public static void AnnihilateInventory(ItemContainer assignedInventoryContainer)
@@ -2008,8 +2037,9 @@ namespace Oxide.Plugins
 
             public virtual bool EnableSavingToDiskByDefault => true;
             public virtual bool HasDefaultInventory => false;
+            public virtual bool DefaultInventoryHandledByBaseType => false;
             public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
-            public virtual void OnInventoryDirty()
+            public virtual void OnDefaultInventoryDirty()
             {
 
             }
@@ -2085,7 +2115,7 @@ namespace Oxide.Plugins
             }
 
 
-            public virtual void OnEntitySaveForNetwork(BaseNetworkable.SaveInfo info)
+            public virtual void OnEntitySaveForNetwork(SaveInfo info)
             {
 
             }
@@ -2123,9 +2153,10 @@ namespace Oxide.Plugins
             public virtual bool EnableSavingToDiskByDefault => true;
 
             public virtual bool HasDefaultInventory => false;
+            public virtual bool DefaultInventoryHandledByBaseType => false;
             public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
 
-            public virtual void OnInventoryDirty()
+            public virtual void OnDefaultInventoryDirty()
             {
 
             }
@@ -2203,7 +2234,7 @@ namespace Oxide.Plugins
 
             }
 
-            public virtual void OnEntitySaveForNetwork(BaseNetworkable.SaveInfo info)
+            public virtual void OnEntitySaveForNetwork(SaveInfo info)
             {
 
             }
@@ -2229,8 +2260,13 @@ namespace Oxide.Plugins
                         bool flag = info.Weapon is BaseMelee;
                         if (isServer && (!flag || sendsMeleeHitNotification))
                         {
-                            //bool arg = info.Initiator.net.connection == info.Predicted;
-                            ClientRPCPlayerAndSpectators(null, info.Initiator as BasePlayer, "HitNotify", false); //this must be false
+                            var initiatorPlayer = info.Initiator as BasePlayer;
+
+                            //the solution was obvious and staring us in the face all along 
+                            //if the client receives an RPC for the HitNotify, but we mention an entity net ID that actualy got hit
+                            //and that entity has a client-sided prefab that suggests it's NOT a BaseCombatEntity, it will not play-client-side.
+                            //so the solution is to make the player think they... hit themselves. Thanks 0xF!
+                            initiatorPlayer.ClientRPCPlayerAndSpectators(null, initiatorPlayer, "HitNotify", false); //this must be false
                         }
                     }
                 }
@@ -2280,16 +2316,6 @@ namespace Oxide.Plugins
 
                     Effect.server.Run(effectToRun, info.HitPositionWorld, info.HitNormalWorld);
 
-                    if (info.damageTypes.Has(DamageType.Explosion))
-                    {
-                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_EXPLOSION);
-                    }
-
-                    if (info.damageTypes.Has(DamageType.Heat))
-                    {
-                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_FIRE);
-                    }
-
                     Hurt(info);
                 }
             }
@@ -2319,135 +2345,226 @@ namespace Oxide.Plugins
         #endregion
 
         #region CUSTOM STORAGE CONTAINER
-        public class CustomStorageContainer : CustomEntities.CustomBaseCombatEntity
+        public class CustomStorageContainer : StorageContainer, ICustomEntity
         {
-            public virtual string panelName => "generic";
-            public virtual bool isLootable => true;
-            public virtual bool onlyOneUser => false;
-            public override bool HasDefaultInventory => true;
-            public override int DefaultInventoryCapacity => 2;
-            public override bool EnableSavingToDiskByDefault => false;
-            public override bool OnRpcMessage(global::BasePlayer player, uint rpc, Message msg)
+            public CustomHandler Handler { get; set; }
+            public List<BaseEntity> SaveListInDataFile { get; set; } = null;
+
+            public virtual bool ShouldDoNormalVanillaBaseCombatEntityHurt => true;
+
+            public virtual bool EnableSavingToDiskByDefault => true;
+
+            public virtual bool HasDefaultInventory => true;
+
+            public virtual bool DefaultInventoryHandledByBaseType => true; //this is important!
+
+            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+
+            public virtual void OnDefaultInventoryDirty()
             {
-                using (TimeWarning.New("StorageContainer.OnRpcMessage", 0))
+                //not needed as the base invalidates network cache which was already done before calling this
+                //base.OnInventoryDirty();
+            }
+            public override void OnItemAddedOrRemoved(Item item, bool added)
+            {
+                base.OnItemAddedOrRemoved(item, added);
+            }
+
+            public ItemContainer DefaultInventory
+            {
+                get
                 {
-                    if (rpc == 331989034U && player != null)
+                    return inventory;
+                }
+                set
+                {
+                    inventory = value;
+                }
+            }
+
+            public virtual int DefaultInventoryCapacity => 48;
+
+            public virtual string DefaultClientsideFullPrefabName() => PREFAB_WOOD_STORAGE_BOX;
+
+            public bool IsBaseCombat() => true;
+
+            public virtual void OnDefaultInventoryPreAnnihilation()
+            {
+
+            }
+
+            public virtual void OnDefaultInventoryFirstCreated()
+            {
+
+            }
+
+            public override float MaxVelocity()
+            {
+                return 100000F;
+            }
+
+            public override void Hurt(HitInfo info)
+            {
+                if (!ShouldDoNormalVanillaBaseCombatEntityHurt)
+                {
+                    return;
+                }
+
+                base.Hurt(info);
+            }
+
+            public virtual void OnCustomPrefabPrototypeEntityRegistered()
+            {
+                panelName = "generic";
+                panelTitle = new Translate.Phrase("loot", "Loot");
+                dropLootDestroyPercent = 0F;
+                dropFloats = true;
+                onlyOneUser = false;
+                pickup.enabled = false; //for now, pickup disabled, unless we handle associated item shortname/skin combos
+                inventorySlots = DefaultInventoryCapacity;
+            }
+            public virtual void OnCustomPrefabPrototypeEntityUnregistered()
+            {
+
+            }
+
+            public virtual void Awake()
+            {
+                CustomHandler.AttachNewHandlerToCustomEntityIfNotPrototype(this);
+            }
+
+
+            public override void ServerInit()
+            {
+                base.ServerInit();
+
+                Handler?.ServerInit();
+            }
+
+            public override void Save(SaveInfo info)
+            {
+                base.Save(info);
+
+                Handler?.Save(info);
+            }
+
+            public override void Load(LoadInfo info)
+            {
+                base.Load(info);
+
+                Handler?.Load(info);
+
+            }
+
+            public virtual void OnEntitySaveForNetwork(SaveInfo info)
+            {
+
+            }
+
+            public override void OnParentChanging(BaseEntity oldParent, BaseEntity newParent)
+            {
+                //do we even need that rigidbody shit from base? Most base entities wouldn't have one, would they
+                base.OnParentChanging(oldParent, newParent);
+
+                Handler?.OnParentChanging(oldParent, newParent);
+            }
+
+            //that's purely base combat entity shit right here
+            public float lastNotifyFrameReplacement = float.MinValue;
+
+            public void DoHitNotifyWithArgForcedToFalseOtherwiseItDoesntWorkLol(HitInfo info)
+            {
+                using (TimeWarning.New("DoHitNotify"))
+                {
+                    if (sendsHitNotification && !(info.Initiator == null) && info.Initiator is BasePlayer && !(this == info.Initiator) && (!info.isHeadshot || !(info.HitEntity is BasePlayer)) && Time.frameCount != lastNotifyFrameReplacement)
                     {
-                        Assert.IsTrue(player.isServer, "SV_RPC Message is using a clientside player!");
-                        if (ConVar.Global.developer > 2)
+                        lastNotifyFrameReplacement = Time.frameCount;
+                        bool flag = info.Weapon is BaseMelee;
+                        if (isServer && (!flag || sendsMeleeHitNotification))
                         {
-                            Debug.Log("SV_RPCMessage: " + player + " - RPC_OpenLoot ");
+                            var initiatorPlayer = info.Initiator as BasePlayer;
+
+                            //the solution was obvious and staring us in the face all along 
+                            //if the client receives an RPC for the HitNotify, but we mention an entity net ID that actualy got hit
+                            //and that entity has a client-sided prefab that suggests it's NOT a BaseCombatEntity, it will not play-client-side.
+                            //so the solution is to make the player think they... hit themselves. Thanks 0xF!
+                            initiatorPlayer.ClientRPCPlayerAndSpectators(null, initiatorPlayer, "HitNotify", false); //this must be false
                         }
-                        using (TimeWarning.New("RPC_OpenLoot", 0))
-                        {
-                            using (TimeWarning.New("Conditions", 0))
-                            {
-                                if (!global::BaseEntity.RPC_Server.IsVisible.Test(331989034U, "RPC_OpenLoot", this, player, 3f))
-                                {
-                                    return true;
-                                }
-                            }
-                            try
-                            {
-                                using (TimeWarning.New("Call", 0))
-                                {
-                                    global::BaseEntity.RPCMessage rpc2 = new global::BaseEntity.RPCMessage
-                                    {
-                                        connection = msg.connection,
-                                        player = player,
-                                        read = msg.read
-                                    };
-                                    this.RPC_OpenLoot(rpc2);
-                                }
-                            }
-                            catch (Exception exception)
-                            {
-                                Debug.LogException(exception);
-                                player.Kick("RPC Error in RPC_OpenLoot");
-                            }
-                        }
-                        return true;
                     }
                 }
-                return base.OnRpcMessage(player, rpc, msg);
-            }
-            private void RPC_OpenLoot(global::BaseEntity.RPCMessage rpc)
-            {
-                if (!this.isLootable)
-                {
-                    return;
-                }
-                global::BasePlayer player = rpc.player;
-                if (!player || !player.CanInteract())
-                {
-                    return;
-                }
-                this.PlayerOpenLoot(player, "", true);
             }
 
-            public virtual bool CanOpenLootPanel(global::BasePlayer player, string panelName)
+            //that's also purely base combat shit
+            public override void OnAttacked(HitInfo info)
             {
-                if (!this.CanBeLooted(player))
+                using (TimeWarning.New("BaseCombatEntity.OnAttacked"))
                 {
-                    return false;
+                    if (!IsDead())
+                    {
+                        DoHitNotifyWithArgForcedToFalseOtherwiseItDoesntWorkLol(info);
+                    }
+                    string effectToRun;
+
+                    switch (info.damageTypes.GetMajorityDamageType())
+                    {
+                        case DamageType.Blunt:
+                            {
+                                effectToRun = PREFAB_FX_IMPACT_METAL_BLUNT;
+                            }
+                            break;
+                        case DamageType.Stab:
+                        case DamageType.Arrow:
+                            {
+                                effectToRun = PREFAB_FX_IMPACT_METAL_STAB;
+                            }
+                            break;
+                        case DamageType.Slash:
+                            {
+                                effectToRun = PREFAB_FX_IMPACT_METAL_SLASH;
+                            }
+                            break;
+                        case DamageType.Bullet:
+                            {
+                                effectToRun = PREFAB_FX_IMPACT_METAL_BULLET;
+                            }
+                            break;
+                        default:
+                            {
+                                effectToRun = PREFAB_FX_IMPACT_METAL_PHYSICAL;
+                            }
+                            break;
+                    }
+
+                    Effect.server.Run(effectToRun, info.HitPositionWorld, info.HitNormalWorld);
+
+                    Hurt(info);
                 }
-                global::BaseLock baseLock = base.GetSlot(global::BaseEntity.Slot.Lock) as global::BaseLock;
-                if (baseLock != null && !baseLock.OnTryToOpen(player))
-                {
-                    player.ChatMessage("It is locked...");
-                    return false;
-                }
-                return true;
-            }
-            public virtual void AddContainers(global::PlayerLoot loot)
-            {
-                loot.AddContainer(this.DefaultInventory);
-            }
-            public virtual bool PlayerOpenLoot(global::BasePlayer player, string panelToOpen = "", bool doPositionChecks = true)
-            {
-                if (Interface.CallHook("CanLootEntity", player, this) != null)
-                {
-                    return false;
-                }
-                if (base.IsLocked())
-                {
-                    player.ShowToast(global::GameTip.Styles.Red_Normal, global::StorageContainer.LockedMessage, Array.Empty<string>());
-                    return false;
-                }
-                if (this.onlyOneUser && base.IsOpen())
-                {
-                    player.ShowToast(global::GameTip.Styles.Red_Normal, global::StorageContainer.InUseMessage, Array.Empty<string>());
-                    return false;
-                }
-                if (panelToOpen == "")
-                {
-                    panelToOpen = this.panelName;
-                }
-                if (!this.CanOpenLootPanel(player, panelToOpen))
-                {
-                    return false;
-                }
-                if (player.inventory.loot.StartLootingEntity(this, doPositionChecks))
-                {
-                    base.SetFlag(global::BaseEntity.Flags.Open, true, false, true);
-                    this.AddContainers(player.inventory.loot);
-                    player.inventory.loot.SendImmediate();
-                    player.ClientRPCPlayer<string>(null, player, "RPC_OpenLootPanel", panelToOpen);
-                    base.SendNetworkUpdate(global::BasePlayer.NetworkQueue.Update);
-                    return true;
-                }
-                return false;
             }
 
-            public virtual void PlayerStoppedLooting(global::BasePlayer player)
+
+            public override void DestroyShared()
             {
-                Interface.CallHook("OnLootEntityEnd", player, this);
-                base.SetFlag(global::BaseEntity.Flags.Open, false, false, true);
-                base.SendNetworkUpdate(global::BasePlayer.NetworkQueue.Update);
+                base.DestroyShared();
+                Handler?.DestroyShared();
+            }
+
+            public override void PreServerLoad()
+            {
+                base.PreServerLoad();
+                Handler?.PreServerLoad();
+            }
+
+            public virtual void SaveExtra(Stream stream, BinaryWriter writer)
+            {
+
+            }
+
+            public virtual void LoadExtra(Stream stream, BinaryReader reader)
+            {
+
             }
         }
         #endregion
-
 
         #region DRAWING
 
@@ -2618,7 +2735,7 @@ namespace Oxide.Plugins
 
                 if (ReusableColCount >= ReusableColBuffer.Length)
                 {
-                    UnityEngine.Debug.LogWarning("Vis query is exceeding collider buffer length.");
+                    Debug.LogWarning("Vis query is exceeding collider buffer length.");
                     ReusableColCount = ReusableColBuffer.Length;
                 }
             }
