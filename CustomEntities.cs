@@ -1,4 +1,5 @@
-﻿using Facepunch;
+﻿using Epic.OnlineServices.UserInfo;
+using Facepunch;
 using Network;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
@@ -16,7 +17,7 @@ using UnityEngine.Assertions;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.2")]
+    [Info("Custom Entities", "Nikedemos", "1.0.4")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -34,6 +35,8 @@ namespace Oxide.Plugins
         public const string PREFAB_FX_IMPACT_METAL_SLASH = "assets/bundled/prefabs/fx/impacts/slash/metal/metal1.prefab";
         public const string PREFAB_FX_IMPACT_METAL_STAB = "assets/bundled/prefabs/fx/impacts/stab/metal/metal1.prefab";
         public const string PREFAB_FX_IMPACT_METAL_BULLET = "assets/bundled/prefabs/fx/impacts/bullet/metal/metal1.prefab";
+
+        public const string PREFAB_PLAYER = "assets/prefabs/player/player.prefab";
 
         public const string PREFAB_FX_IMPACT_METAL_PHYSICAL = "assets/bundled/prefabs/fx/impacts/physics/phys-impact-metal-hollow-hard.prefab";
         public const string PREFAB_FX_EXPLOSION = "assets/bundled/prefabs/fx/impacts/additive/explosion.prefab";
@@ -766,6 +769,15 @@ namespace Oxide.Plugins
                 _entityPrefabNameFieldInfo.SetValue(newEntity, recipe.FullPrefabName);
 
                 ICustomEntity asInterface = (newEntity as ICustomEntity);
+
+
+                //0xF ran here
+                var tryFindPrototype = TryGetPreprocessedPrototypeFromVanilla(asInterface.DefaultClientsideFullPrefabName());
+
+                if (tryFindPrototype != null)
+                {
+                    newEntity.bounds = tryFindPrototype.bounds;
+                }
 
                 asInterface.SaveListInDataFile = data.CustomEntitySaveList;
 
@@ -2248,8 +2260,13 @@ namespace Oxide.Plugins
                         bool flag = info.Weapon is BaseMelee;
                         if (isServer && (!flag || sendsMeleeHitNotification))
                         {
-                            //bool arg = info.Initiator.net.connection == info.Predicted;
-                            ClientRPCPlayerAndSpectators(null, info.Initiator as BasePlayer, "HitNotify", false); //this must be false
+                            var initiatorPlayer = info.Initiator as BasePlayer;
+
+                            //the solution was obvious and staring us in the face all along 
+                            //if the client receives an RPC for the HitNotify, but we mention an entity net ID that actualy got hit
+                            //and that entity has a client-sided prefab that suggests it's NOT a BaseCombatEntity, it will not play-client-side.
+                            //so the solution is to make the player think they... hit themselves. Thanks 0xF!
+                            initiatorPlayer.ClientRPCPlayerAndSpectators(null, initiatorPlayer, "HitNotify", false); //this must be false
                         }
                     }
                 }
@@ -2298,16 +2315,6 @@ namespace Oxide.Plugins
                     }
 
                     Effect.server.Run(effectToRun, info.HitPositionWorld, info.HitNormalWorld);
-
-                    if (info.damageTypes.Has(DamageType.Explosion))
-                    {
-                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_EXPLOSION);
-                    }
-
-                    if (info.damageTypes.Has(DamageType.Heat))
-                    {
-                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_FIRE);
-                    }
 
                     Hurt(info);
                 }
@@ -2475,8 +2482,13 @@ namespace Oxide.Plugins
                         bool flag = info.Weapon is BaseMelee;
                         if (isServer && (!flag || sendsMeleeHitNotification))
                         {
-                            //bool arg = info.Initiator.net.connection == info.Predicted;
-                            ClientRPCPlayerAndSpectators(null, info.Initiator as BasePlayer, "HitNotify", false); //this must be false
+                            var initiatorPlayer = info.Initiator as BasePlayer;
+
+                            //the solution was obvious and staring us in the face all along 
+                            //if the client receives an RPC for the HitNotify, but we mention an entity net ID that actualy got hit
+                            //and that entity has a client-sided prefab that suggests it's NOT a BaseCombatEntity, it will not play-client-side.
+                            //so the solution is to make the player think they... hit themselves. Thanks 0xF!
+                            initiatorPlayer.ClientRPCPlayerAndSpectators(null, initiatorPlayer, "HitNotify", false); //this must be false
                         }
                     }
                 }
@@ -2491,7 +2503,6 @@ namespace Oxide.Plugins
                     {
                         DoHitNotifyWithArgForcedToFalseOtherwiseItDoesntWorkLol(info);
                     }
-
                     string effectToRun;
 
                     switch (info.damageTypes.GetMajorityDamageType())
@@ -2526,19 +2537,10 @@ namespace Oxide.Plugins
 
                     Effect.server.Run(effectToRun, info.HitPositionWorld, info.HitNormalWorld);
 
-                    if (info.damageTypes.Has(DamageType.Explosion))
-                    {
-                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_EXPLOSION);
-                    }
-
-                    if (info.damageTypes.Has(DamageType.Heat))
-                    {
-                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_FIRE);
-                    }
-
                     Hurt(info);
                 }
             }
+
 
             public override void DestroyShared()
             {
