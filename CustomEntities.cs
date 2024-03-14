@@ -1,5 +1,4 @@
-﻿using Epic.OnlineServices.UserInfo;
-using Facepunch;
+﻿using Facepunch;
 using Network;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
@@ -13,11 +12,10 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using UnityEngine;
-using UnityEngine.Assertions;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.4")]
+    [Info("Custom Entities", "Nikedemos", "1.0.5")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -46,7 +44,7 @@ namespace Oxide.Plugins
         public const string CMD_PURGE_PREFAB = "purge_prefab";
         public const string CMD_PURGE_PLUGIN = "purge_plugin";
 
-        public const string PERM_ADMIN = "customentities.admin"; //currently only required for the spawn_at command
+        public const string PERM_ADMIN = "customentities.admin"; //required for the commands above
 
         #endregion
 
@@ -426,6 +424,10 @@ namespace Oxide.Plugins
                 _vanillaEntityToCustomSaveList = null;
             }
 
+
+            public static BaseEntity TryGetPreprocessedPrototypeFromVanilla(string prefabName) => TryGetPreprocessedPrototypeFrom(GameManager.server.preProcessed.prefabList, prefabName);
+            public static BaseEntity TryGetPreprocessedPrototypeFromCustom(string prefabName) => TryGetPreprocessedPrototypeFrom(_prefabsPreProcessedCustom, prefabName);
+
             private static BaseEntity TryGetPreprocessedPrototypeFrom(Dictionary<string, GameObject> preProcessedDictionary, string prefabName)
             {
                 GameObject goResult;
@@ -652,9 +654,6 @@ namespace Oxide.Plugins
 
             }
 
-            public static BaseEntity TryGetPreprocessedPrototypeFromVanilla(string prefabName) => TryGetPreprocessedPrototypeFrom(GameManager.server.preProcessed.prefabList, prefabName);
-            public static BaseEntity TryGetPreprocessedPrototypeFromCustom(string prefabName) => TryGetPreprocessedPrototypeFrom(_prefabsPreProcessedCustom, prefabName);
-
             public static bool RegisterAndLoadBundle(CustomPrefabBundle bundle)
             {
                 //step 1: ensure the data...
@@ -737,6 +736,8 @@ namespace Oxide.Plugins
                     Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA, null, countKilled));
                 }
 
+                BinaryData.ForgetBinaryData(cookbook.Owner);
+
                 return allGood;
             }
 
@@ -770,8 +771,6 @@ namespace Oxide.Plugins
 
                 ICustomEntity asInterface = (newEntity as ICustomEntity);
 
-
-                //0xF ran here
                 var tryFindPrototype = TryGetPreprocessedPrototypeFromVanilla(asInterface.DefaultClientsideFullPrefabName());
 
                 if (tryFindPrototype != null)
@@ -1151,6 +1150,18 @@ namespace Oxide.Plugins
                 return resultData;
             }
 
+            internal static void ForgetBinaryData(Plugin maybeOwnerPlugin)
+            {
+                if (!_cacheByOwner.TryGetValue(maybeOwnerPlugin, out BinaryData data))
+                {
+                    return;
+                }
+
+                data.CustomEntitySaveList = null;
+
+                _cacheByOwner.Remove(maybeOwnerPlugin);
+            }
+
             internal BinaryData(Plugin ownerPlugin)
             {
                 _ownerPlugin = ownerPlugin;
@@ -1367,6 +1378,7 @@ namespace Oxide.Plugins
                                             if ((bool)baseEntity)
                                             {
                                                 baseEntity.InitLoad(entData.baseNetworkable.uid); //this will restore net ID
+                                                baseEntity.PreServerLoad();
                                                 dictionaryVanilla.Add(baseEntity, entData);
                                             }
                                             else
@@ -1887,11 +1899,14 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                if (_ownerEntityAsInterface.DefaultInventory == null)
+                if (_ownerEntityAsInterface.DefaultInventory != null)
                 {
-                    _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, true, _ownerEntityAsInterface.DefaultInventoryCapacity);
-                    _ownerEntityAsInterface.OnDefaultInventoryFirstCreated();
+                    return;
                 }
+
+                _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, true, _ownerEntityAsInterface.DefaultInventoryCapacity);
+                _ownerEntityAsInterface.OnDefaultInventoryFirstCreated();
+
             }
 
             internal void Save(BaseNetworkable.SaveInfo info)
@@ -2108,6 +2123,8 @@ namespace Oxide.Plugins
                 Handler?.DestroyShared();
             }
 
+            //prior to 1.0.5, this was never called for some reason. Lol.
+
             public override void PreServerLoad()
             {
                 base.PreServerLoad();
@@ -2316,6 +2333,16 @@ namespace Oxide.Plugins
 
                     Effect.server.Run(effectToRun, info.HitPositionWorld, info.HitNormalWorld);
 
+                    if (info.damageTypes.Has(DamageType.Explosion))
+                    {
+                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_EXPLOSION);
+                    }
+
+                    if (info.damageTypes.Has(DamageType.Heat))
+                    {
+                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_FIRE);
+                    }
+
                     Hurt(info);
                 }
             }
@@ -2482,13 +2509,8 @@ namespace Oxide.Plugins
                         bool flag = info.Weapon is BaseMelee;
                         if (isServer && (!flag || sendsMeleeHitNotification))
                         {
-                            var initiatorPlayer = info.Initiator as BasePlayer;
-
-                            //the solution was obvious and staring us in the face all along 
-                            //if the client receives an RPC for the HitNotify, but we mention an entity net ID that actualy got hit
-                            //and that entity has a client-sided prefab that suggests it's NOT a BaseCombatEntity, it will not play-client-side.
-                            //so the solution is to make the player think they... hit themselves. Thanks 0xF!
-                            initiatorPlayer.ClientRPCPlayerAndSpectators(null, initiatorPlayer, "HitNotify", false); //this must be false
+                            //bool arg = info.Initiator.net.connection == info.Predicted;
+                            ClientRPCPlayerAndSpectators(null, info.Initiator as BasePlayer, "HitNotify", false); //this must be false
                         }
                     }
                 }
@@ -2503,6 +2525,7 @@ namespace Oxide.Plugins
                     {
                         DoHitNotifyWithArgForcedToFalseOtherwiseItDoesntWorkLol(info);
                     }
+
                     string effectToRun;
 
                     switch (info.damageTypes.GetMajorityDamageType())
@@ -2537,10 +2560,19 @@ namespace Oxide.Plugins
 
                     Effect.server.Run(effectToRun, info.HitPositionWorld, info.HitNormalWorld);
 
+                    if (info.damageTypes.Has(DamageType.Explosion))
+                    {
+                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_EXPLOSION);
+                    }
+
+                    if (info.damageTypes.Has(DamageType.Heat))
+                    {
+                        Effect.server.DoAdditiveImpactEffect(info, PREFAB_FX_FIRE);
+                    }
+
                     Hurt(info);
                 }
             }
-
 
             public override void DestroyShared()
             {
