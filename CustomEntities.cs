@@ -10,12 +10,13 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.5")]
+    [Info("Custom Entities", "Nikedemos", "1.0.6")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -43,6 +44,7 @@ namespace Oxide.Plugins
         public const string CMD_SPAWN_AT = "spawn_at";
         public const string CMD_PURGE_PREFAB = "purge_prefab";
         public const string CMD_PURGE_PLUGIN = "purge_plugin";
+        public const string CMD_COUNT_PLUGIN = "count_plugin";
 
         public const string PERM_ADMIN = "customentities.admin"; //required for the commands above
 
@@ -86,12 +88,13 @@ namespace Oxide.Plugins
 
         #region LANG
 
-        public const string MSG_PREFAB_REGISTERING = nameof(MSG_PREFAB_REGISTERING);
+        public const string MSG_PREFAB_REGISTERING_CUSTOM = nameof(MSG_PREFAB_REGISTERING_CUSTOM);
+        public const string MSG_PREFAB_REGISTERING_MODIFIED = nameof(MSG_PREFAB_REGISTERING_MODIFIED);
         public const string MSG_PREFAB_REGISTRATION_EXCEPTION = nameof(MSG_PREFAB_REGISTRATION_EXCEPTION);
         public const string MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA = nameof(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA);
         public const string MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM = nameof(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM);
         public const string MSG_SAVING_SAVEFILES = nameof(MSG_SAVING_SAVEFILES);
-        public const string MSG_SAVED_ENTITIES = nameof(MSG_SAVED_ENTITIES);
+        public const string MSG_SAVED_ENTITIES_1 = nameof(MSG_SAVED_ENTITIES_1);
         public const string MSG_SAVING_DATAFILE_EXCEPTION = nameof(MSG_SAVING_DATAFILE_EXCEPTION);
         public const string MSG_LOADING_NO_SAVEFILE = nameof(MSG_LOADING_NO_SAVEFILE);
         public const string MSG_LOADING_YES_DATAFILE = nameof(MSG_LOADING_YES_DATAFILE);
@@ -120,14 +123,22 @@ namespace Oxide.Plugins
         public const string MSG_CMD_PURGE_PLUGIN_NO_ENTITIES_FOUND = nameof(MSG_CMD_PURGE_PLUGIN_NO_ENTITIES_FOUND);
         public const string MSG_CMD_PURGE_PLUGIN_KILLED_ENTITIES = nameof(MSG_CMD_PURGE_PLUGIN_KILLED_ENTITIES);
 
+        public const string MSG_TRY_COMPO_REPLACE_ERROR = nameof(MSG_TRY_COMPO_REPLACE_ERROR);
+        public const string MSG_TRY_COMPO_REPLACE_ERROR_GAMEOBJECT_NULL = nameof(MSG_TRY_COMPO_REPLACE_ERROR_GAMEOBJECT_NULL);
+        public const string MSG_TRY_COMPO_REPLACE_ERROR_NO_OLD_COMPO_ATTACHED = nameof(MSG_TRY_COMPO_REPLACE_ERROR_NO_OLD_COMPO_ATTACHED);
+        public const string MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO = nameof(MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO);
+        public const string MSG_TRY_COMPO_REPLACE_DEBUG_HEADER = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_HEADER);
+        public const string MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO);
+
         private static readonly Dictionary<string, string> LangMessages = new Dictionary<string, string>
         {
-            [MSG_PREFAB_REGISTERING] = "Registering entity {0} : {1} as prefab \"{2}\"...",
+            [MSG_PREFAB_REGISTERING_CUSTOM] = "Registering custom entity {0} : {1} as prefab \"{2}\"...",
+            [MSG_PREFAB_REGISTERING_MODIFIED] = "Registering modified entity based on prefab \"{0}\" as prefab \"{1}\"...",
             [MSG_PREFAB_REGISTRATION_EXCEPTION] = "Exception while trying to register prefab: {0}\n{1}",
             [MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA] = "Removed {0} instances of various vanilla entities handled by the savefile from world.",
             [MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM] = "Removed {0} instances of a custom prefab \"{1}\" from world.",
             [MSG_SAVING_SAVEFILES] = "Saving {0} binary savefiles...",
-            [MSG_SAVED_ENTITIES] = "INFO: Saved {0} out of {1} entities ({2} custom, {3} vanilla) to \"{4}\"",
+            [MSG_SAVED_ENTITIES_1] = "INFO: Saved {0} out of {1} entities ({2} custom, {3} vanilla. {4} removed because invalid) to \"{5}\"",
             [MSG_SAVING_DATAFILE_EXCEPTION] = "ERROR: {0} while trying to save \"{1}\": {2}\n{3}",
             [MSG_LOADING_NO_SAVEFILE] = "INFO: Savefile \"{0}\" doesn't exist, nothing to load.",
             [MSG_LOADING_YES_DATAFILE] = "Loading savefile from \"{0}\"...",
@@ -152,6 +163,13 @@ namespace Oxide.Plugins
             [MSG_CMD_PURGE_PLUGIN_NOTHING_FOUND] = "Could not find any Plugins matching the provided name \"{0}\"",
             [MSG_CMD_PURGE_PLUGIN_NO_ENTITIES_FOUND] = "Could not find any entities from the Plugin \"{0}\"",
             [MSG_CMD_PURGE_PLUGIN_KILLED_ENTITIES] = "Purged {0} entities from the Plugin \"{1}\"",
+
+            [MSG_TRY_COMPO_REPLACE_ERROR] = "ERROR WHILE TRYING TO REPLACE `{0}` with `{1}`:",
+            [MSG_TRY_COMPO_REPLACE_ERROR_GAMEOBJECT_NULL] = "The GameObject is null!",
+            [MSG_TRY_COMPO_REPLACE_ERROR_NO_OLD_COMPO_ATTACHED] = "There's no `{0}` component attached to the GameObject!",
+            [MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO] = "The GameObject already has a `{0}` component attached (and there's only one allowed!)",
+            [MSG_TRY_COMPO_REPLACE_DEBUG_HEADER] = "`{0}` is a subclass of `{1}`, replacing matching fields:\n",
+            [MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO] = "    set `{0}` to `{1}`",
         };
 
         private static string MSG(string msg, string userID = null, params object[] args)
@@ -170,6 +188,19 @@ namespace Oxide.Plugins
 
         #region COVALENCE COMMANDS
 
+        private void CommandCountPlugin(IPlayer iplayer, string command, string[] args)
+        {
+            if (args.Length == 0)
+            {
+                iplayer.Reply(MSG(MSG_CMD_PROVIDE_PLUGIN_NAME, iplayer.Id));
+                return;
+            }
+
+            string pluginName = args[0].ToLower();
+
+            BinaryData.PlayerRequestedPluginCount(iplayer, pluginName);
+        }
+
         private void CommandPurgePlugin(IPlayer iplayer, string command, string[] args)
         {
             if (args.Length == 0)
@@ -180,7 +211,7 @@ namespace Oxide.Plugins
 
             string pluginName = args[0].ToLower();
 
-            BinaryData.PlayerRequestedPurge(iplayer, pluginName);
+            BinaryData.PlayerRequestedPluginPurge(iplayer, pluginName);
         }
 
         private void CommandPurgePrefab(IPlayer iplayer, string command, string[] args)
@@ -274,6 +305,7 @@ namespace Oxide.Plugins
             AddCovalenceCommand(CMD_PURGE_PREFAB, nameof(CommandPurgePrefab), PERM_ADMIN);
             AddCovalenceCommand(CMD_PURGE_PLUGIN, nameof(CommandPurgePlugin), PERM_ADMIN);
             AddCovalenceCommand(CMD_SPAWN_AT, nameof(CommandSpawnAtPlayerEyes), PERM_ADMIN);
+            AddCovalenceCommand(CMD_COUNT_PLUGIN, nameof(CommandCountPlugin), PERM_ADMIN);
 
             BinaryData.Init();
 
@@ -384,13 +416,17 @@ namespace Oxide.Plugins
 
             private static Dictionary<GameObject, BaseEntity> _preProcessedGoToEntityCache = null;
 
-            private static ListHashSet<CustomPrefabRecipe> _cachedRecipes = null;
+            private static ListHashSet<GenericPrefabRecipe> _cachedRecipes = null;
 
             private static Dictionary<Plugin, BinaryData> _pluginToBinaryData = null;
 
             private static List<string> _gameManifestEntityList = null;            //this is not vanilla, just for building the vanilla manifest array
 
             private static Dictionary<ulong, List<BaseEntity>> _vanillaEntityToCustomSaveList = null;
+
+            public static Dictionary<string, uint> ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles = null;
+
+            public static Dictionary<string, List<BaseEntity>> ModifiedPrefabFullNameToCustomSaveList = null;
 
             internal static void Init()
             {
@@ -402,10 +438,13 @@ namespace Oxide.Plugins
                 _entityPrefabNameFieldInfo = typeof(BaseNetworkable).GetField("_prefabName", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
                 _gameManifestEntityList = new List<string>();
-                _cachedRecipes = new ListHashSet<CustomPrefabRecipe>();
+                _cachedRecipes = new ListHashSet<GenericPrefabRecipe>();
                 _pluginToBinaryData = new Dictionary<Plugin, BinaryData>();
 
                 _vanillaEntityToCustomSaveList = new Dictionary<ulong, List<BaseEntity>>();
+
+                ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles = new Dictionary<string, uint>();
+                ModifiedPrefabFullNameToCustomSaveList = new Dictionary<string, List<BaseEntity>>();
             }
 
             internal static void Unload()
@@ -422,6 +461,15 @@ namespace Oxide.Plugins
                 _pluginToBinaryData = null;
 
                 _vanillaEntityToCustomSaveList = null;
+
+                ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles = null;
+                ModifiedPrefabFullNameToCustomSaveList = null;
+            }
+
+            public static void NaughtyReplaceEntityFullPrefabName(BaseEntity entity, string fullPrefabName)
+            {
+                //naughty reflection
+                _entityPrefabNameFieldInfo.SetValue(entity, fullPrefabName);
             }
 
 
@@ -543,8 +591,147 @@ namespace Oxide.Plugins
                 ForEachItemEntityRecursively(item, (entity) => EnsureMovedToCustomSaveList(entity, targetList));
             }
 
+            private static void EnsureMovedToCustomSaveListRecursivelyEntireContainer(ItemContainer itemContainer, List<BaseEntity> saveList)
+            {
+                if (itemContainer == null)
+                {
+                    return;
+                }
+
+                var itemListCount = itemContainer.itemList?.Count ?? 0;
+
+                if (itemListCount == 0)
+                {
+                    return;
+                }
+
+                for (var i = 0; i < itemContainer.itemList.Count; i++)
+                {
+                    var item = itemContainer.itemList[i];
+
+                    if (item == null)
+                    {
+                        continue;
+                    }
+
+                    EnsureMovedToCustomSaveListRecursively(item, saveList);
+                }
+                
+            }
+            
+
+            private static void ForEachEntityInTransformHierarchyRecursivelyAndAlsoConsideringItemsInInventories(BaseEntity entity, Action<BaseEntity> entityAction, List<BaseEntity> saveList)
+            {
+                entityAction(entity);
+
+                //still!
+
+                if (entity == null)
+                {
+                    return;
+                }
+
+                //so we have several "obvious" cases here
+                //in fact, maybe we should re-visit MetaphysicsEnchantedItems to get everything that has a container, presumably?
+
+                //first obvious case:
+                var someSortOfContainer = entity as IItemContainerEntity;
+
+                //this covers a broad range of things that have "ItemContainer inventory".
+
+                if (someSortOfContainer != null)
+                {
+                    //this will do nothing if the inventory is null or empty
+                    EnsureMovedToCustomSaveListRecursivelyEntireContainer(someSortOfContainer.inventory, saveList);
+                }
+                else
+                {
+                    var asDroppedItem = entity as WorldItem;
+
+                    if (asDroppedItem != null)
+                    {
+                        //this will do nothing if the asDroppedItem.item is null.
+                        EnsureMovedToCustomSaveListRecursively(asDroppedItem.item, saveList);
+                    }
+                    else
+                    {
+                        var asPlayer = entity as BasePlayer;
+
+                        if (asPlayer != null)
+                        {
+                            var playerInventory = asPlayer.inventory;
+
+                            if (playerInventory != null)
+                            {
+                                EnsureMovedToCustomSaveListRecursivelyEntireContainer(playerInventory.containerMain, saveList);
+                                EnsureMovedToCustomSaveListRecursivelyEntireContainer(playerInventory.containerBelt, saveList);
+                                EnsureMovedToCustomSaveListRecursivelyEntireContainer(playerInventory.containerWear, saveList);
+
+                                //any backpacks? almost forgot!
+
+                                var getBackpack = playerInventory.GetBackpackWithInventory();
+
+                                if (getBackpack != null)
+                                {
+                                    EnsureMovedToCustomSaveListRecursivelyEntireContainer(getBackpack.contents, saveList);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var asDroppedItemContainer = entity as DroppedItemContainer;
+
+                            if (asDroppedItemContainer != null)
+                            {
+                                EnsureMovedToCustomSaveListRecursivelyEntireContainer(asDroppedItemContainer.inventory, saveList);
+                            }
+                            else
+                            {
+                                //and last chance... so far, that I can see, as much as edge cases go.
+
+                                var asLootableCorpse = entity as LootableCorpse;
+
+                                if (asLootableCorpse != null)
+                                {
+                                    var inventories = asLootableCorpse.containers;
+
+                                    if (inventories != null)
+                                    {
+                                        int invLength = inventories.Length;
+                                        for (var i = 0;  i < invLength; i++)
+                                        {
+                                            var inventory = inventories[i];
+
+                                            EnsureMovedToCustomSaveListRecursivelyEntireContainer(inventory, saveList);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+                if (entity.children == null)
+                {
+                    return;
+                }
+
+                var childrenCount = entity.children.Count;
+
+                for (int i = 0; i < childrenCount; i++)
+                {
+                    ForEachEntityInTransformHierarchyRecursivelyAndAlsoConsideringItemsInInventories(entity.children[i], entityAction, saveList);
+                }
+            }
+
             private static void ForEachItemEntityRecursively(Item item, Action<BaseEntity> entityAction) //so the action will be either move to custom, or move to vanilla... and keep passing the action
             {
+                if (item == null)
+                {
+                    return;
+                }
+
                 //sub entity...
                 if (item.instanceData != null)
                 {
@@ -604,8 +791,70 @@ namespace Oxide.Plugins
 
             }
 
+            /*
+             * 
+            public static void EnsureMovedToCustomSaveListRecursively(Item item, List<BaseEntity> targetList)
+            {
+                ForEachItemEntityRecursively(item, (entity) => EnsureMovedToCustomSaveList(entity, targetList));
+            }
+
+             */
+
+            public static void EnsureMovedToCustomSaveListRecursivelyTopDown(BaseEntity vanillaEntity, List<BaseEntity> targetList)
+            {
+                bool first = true;
+
+                ForEachEntityInTransformHierarchyRecursivelyAndAlsoConsideringItemsInInventories(vanillaEntity, (entity) =>
+                {
+                    EnsureMovedToCustomSaveListMindingIfFirstOneIsForced(entity, targetList, ref first);
+                }, targetList);
+            }
+
+            public static void EnsureMovedToCustomSaveListMindingIfFirstOneIsForced(BaseEntity vanillaEntity, List<BaseEntity> targetList, ref bool first)
+            {
+                //so. subentities, and stuff like that,
+                //their "enableSaving" status WILL matter.
+
+                //i.e. here, in this lambda thingy,
+                //if entity.enableSaving is false, we should NOT do this.
+
+                //HOWEVER. For the first one, i.e. the topmost one,
+                //we already know that we WANT it there.
+                //so it needs to be ignored for that one.
+
+                //so keep passing a bool.
+
+                //
+
+                if (!first)
+                {
+                    if (vanillaEntity.enableSaving == false)
+                    {
+                        return;
+                    }
+                }
+
+                first = false;
+                EnsureMovedToCustomSaveList(vanillaEntity, targetList);
+            }
+
             public static void EnsureMovedToCustomSaveList(BaseEntity vanillaEntity, List<BaseEntity> targetList)
             {
+                if (vanillaEntity == null)
+                {
+                    return;
+                }
+
+                if (vanillaEntity.net == null)
+                {
+                    return;
+                }
+
+                if (vanillaEntity.IsDestroyed)
+                {
+                    return;
+                }
+
                 ICustomEntity asInterface = vanillaEntity as ICustomEntity;
 
                 if (asInterface != null)
@@ -656,22 +905,42 @@ namespace Oxide.Plugins
 
             public static bool RegisterAndLoadBundle(CustomPrefabBundle bundle)
             {
-                //step 1: ensure the data...
+                //step 0: ensure the data...
                 BinaryData binaryData = BinaryData.SummonBinaryData(bundle.Owner);
 
                 binaryData.PrefabBundle = bundle;
 
-                bool allGood = true;
-                //step 2: register prefabs from recipes...
+                List<CustomPrefabRecipe> customRecipes = Pool.GetList<CustomPrefabRecipe>();
+                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.GetList<ModifiedPrefabRecipe>();
+
+                //step 1: separate the grain from the hull
+
                 for (int i = 0; i < binaryData.PrefabBundle.Recipes.Length; i++)
                 {
-                    CustomPrefabRecipe recipe = binaryData.PrefabBundle.Recipes[i];
+                    GenericPrefabRecipe recipe = binaryData.PrefabBundle.Recipes[i];
 
-                    Instance.PrintWarning(MSG(MSG_PREFAB_REGISTERING, null, recipe.EntityType.Name, (recipe.BaseCombat == null ? nameof(BaseEntity) : nameof(BaseCombatEntity)), recipe.FullPrefabName));
+                    if (recipe is CustomPrefabRecipe customRecipe)
+                    {
+                        customRecipes.Add(customRecipe);
+                    }
+                    else if (recipe is ModifiedPrefabRecipe modifiedRecipe)
+                    {
+                        modifiedRecipes.Add(modifiedRecipe);
+                    }
+                }
+
+                bool allGood = true;
+                //step 2: register custom prefabs from recipes...
+
+                for (int i = 0; i < customRecipes.Count; i++)
+                {
+                    CustomPrefabRecipe recipe = customRecipes[i];
+
+                    Instance.PrintWarning(MSG(MSG_PREFAB_REGISTERING_CUSTOM, null, recipe.EntityType.Name, (recipe.BaseCombat == null ? nameof(BaseEntity) : nameof(BaseCombatEntity)), recipe.FullPrefabName));
 
                     try
                     {
-                        RegisterPrefabInternal(recipe, binaryData);
+                        RegisterPrefabCustom(recipe, binaryData);
                     }
                     catch (Exception e)
                     {
@@ -681,7 +950,29 @@ namespace Oxide.Plugins
 
                 }
 
-                //step 3: now that everything is registered, load.
+                //step 3: register modified recipes. We're doing that second since we might wanna modify a custom prefab too
+                for (int i = 0; i < modifiedRecipes.Count; i++)
+                {
+                    ModifiedPrefabRecipe recipe = modifiedRecipes[i];
+
+                    Instance.PrintWarning(MSG(MSG_PREFAB_REGISTERING_MODIFIED, null, recipe.OriginalFullPrefabName, recipe.FullPrefabName));
+
+                    try
+                    {
+                        RegisterPrefabModified(recipe, binaryData);
+                    }
+                    catch (Exception e)
+                    {
+                        Instance.PrintError(MSG(MSG_PREFAB_REGISTRATION_EXCEPTION, null, e.Message, e.StackTrace));
+                        allGood = false;
+                    }
+                }
+
+                Pool.FreeList(ref customRecipes);
+                Pool.FreeList(ref modifiedRecipes);
+
+
+                //step 4: now that everything is registered, load.
                 //now they should all know their appropriate save lists.
 
                 binaryData.Load();
@@ -697,17 +988,53 @@ namespace Oxide.Plugins
                 //this will ensure the data wrapper, just in case it wasn't before
                 BinaryData binaryData = BinaryData.SummonBinaryData(cookbook.Owner);
 
-                binaryData.Save(); //this will save everything and then kill everything
+                binaryData.Save(); //this will save everything
+
+                List<CustomPrefabRecipe> customRecipes = Pool.GetList<CustomPrefabRecipe>();
+                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.GetList<ModifiedPrefabRecipe>();
+
+
+                for (int i = 0; i < binaryData.PrefabBundle.Recipes.Length; i++)
+                {
+                    GenericPrefabRecipe recipe = binaryData.PrefabBundle.Recipes[i];
+
+                    if (recipe is CustomPrefabRecipe customRecipe)
+                    {
+                        customRecipes.Add(customRecipe);
+                    }
+                    else if (recipe is ModifiedPrefabRecipe modifiedRecipe)
+                    {
+                        modifiedRecipes.Add(modifiedRecipe);
+                    }
+                }
 
                 bool allGood = true;
 
-                for (int i = 0; i < cookbook.Recipes.Length; i++)
+                for (int i = 0; i < modifiedRecipes.Count; i++)
                 {
-                    if (!UnregisterPrefabInternal(cookbook.Recipes[i]))
+                    ModifiedPrefabRecipe recipe = modifiedRecipes[i];
+
+                    if (!UnregisterPrefabInternal(recipe))
                     {
                         allGood = false;
                     }
                 }
+
+                for (int i = 0; i < customRecipes.Count; i++)
+                {
+                    CustomPrefabRecipe recipe = customRecipes[i];
+
+                    //caveat: this removes from _modified... cache!
+
+                    if (!UnregisterPrefabInternal(recipe))
+                    {
+                        allGood = false;
+                    }
+
+                }
+
+                Pool.FreeList(ref customRecipes);
+                Pool.FreeList(ref modifiedRecipes);
 
                 //and now we need to kill off vanilla entities that might still linger about
 
@@ -736,15 +1063,98 @@ namespace Oxide.Plugins
                     Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA, null, countKilled));
                 }
 
+
                 BinaryData.ForgetBinaryData(cookbook.Owner);
 
                 return allGood;
             }
 
-
             //and the rest are private methods
 
-            private static bool RegisterPrefabInternal(CustomPrefabRecipe recipe, BinaryData data)
+            private static bool RegisterPrefabModified(ModifiedPrefabRecipe recipe, BinaryData data)
+            {
+                var tryFindPrototype = TryGetPreprocessedPrototypeFromVanilla(recipe.OriginalFullPrefabName);
+
+                if (tryFindPrototype == null)
+                {
+                    tryFindPrototype = TryGetPreprocessedPrototypeFromCustom(recipe.OriginalFullPrefabName);
+                }
+
+                if (tryFindPrototype == null)
+                {
+                    return false;
+                }
+
+                var newGo = UnityEngine.Object.Instantiate(tryFindPrototype.gameObject, null, true);
+
+                newGo.SetActive(false);
+
+                var newEntity = newGo.GetComponent<BaseEntity>();
+
+                //we know entity won't be null because TryGetPreprocessed looks for an entity in first place
+
+                if (recipe.ModificationFunction != null)
+                {
+                    if (!recipe.ModificationFunction(newEntity))
+                    {
+                        return false;
+                    }
+                }
+
+                AddToGameManifest(recipe.FullPrefabName, newGo, recipe.EnableInSpawnCommand);
+
+                AddToPreprocessed(recipe.FullPrefabName, newGo);
+
+                //var originalPrefabStringPoolID = newEntity.prefabID;
+                var modifiedPrefabStringPoolID = AddToStringPool(recipe.FullPrefabName);
+
+
+                //MUST DISABLE VANILLA SAVING BECAUSE NOW IT HAS A NON-EXISTING PREFAB ID!
+
+                //in this case, it will help identify the modified prefab in the dictionary, given its full prefab name.
+
+                if (recipe.SaveHandling == ModifiedSaveHandling.SaveInVanillaSaveList)
+                {
+                    newEntity.enableSaving = true;
+                }
+                else
+                {
+                    newEntity.enableSaving = false;
+
+                    //naughty reflection
+                    NaughtyReplaceEntityFullPrefabName(newEntity, recipe.FullPrefabName);
+
+                    ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.Add(recipe.FullPrefabName, modifiedPrefabStringPoolID);
+
+
+                    //add the compo
+
+                    var newCompo = newGo.AddComponent<ModifiedBundleSaveBehaviour>();
+
+                    newCompo.RecipeFullPrefabName = recipe.FullPrefabName;
+
+                    if (recipe.SaveHandling == ModifiedSaveHandling.SaveInBundleSaveList)
+                    {
+                        ModifiedPrefabFullNameToCustomSaveList.Add(recipe.FullPrefabName, data.CustomEntitySaveList);
+                        newCompo.AddToCustomSaveList = true;
+                    }
+
+                }
+
+
+                UnityEngine.Object.DontDestroyOnLoad(newGo);
+
+                if (!_cachedRecipes.Contains(recipe))
+                {
+                    _cachedRecipes.Add(recipe);
+                }
+
+                return true;
+            }
+
+
+
+            private static bool RegisterPrefabCustom(CustomPrefabRecipe recipe, BinaryData data)
             {
                 GameObject newGo = new GameObject(recipe.ShortPrefabName)
                 {
@@ -767,7 +1177,7 @@ namespace Oxide.Plugins
                 newEntity.prefabID = AddToStringPool(recipe.FullPrefabName);
 
                 //naughty reflection
-                _entityPrefabNameFieldInfo.SetValue(newEntity, recipe.FullPrefabName);
+                NaughtyReplaceEntityFullPrefabName(newEntity, recipe.FullPrefabName);
 
                 ICustomEntity asInterface = (newEntity as ICustomEntity);
 
@@ -795,48 +1205,74 @@ namespace Oxide.Plugins
                 return true;
             }
 
-            private static bool UnregisterPrefabInternal(CustomPrefabRecipe recipe)
+
+            private static bool UnregisterPrefabInternal(GenericPrefabRecipe recipe)
             {
                 GameObject go;
+
+                string recipeFullPrefabName = recipe.FullPrefabName;
 
                 if (!_prefabsPreProcessedCustom.TryGetValue(recipe.FullPrefabName, out go))
                 {
                     return false;
                 }
 
-                RemoveFromPreProcessed(recipe.FullPrefabName);
-                RemoveFromGameManifest(recipe.FullPrefabName, recipe.EnableInSpawnCommand);
-                RemoveFromStringPool(recipe.FullPrefabName);
+                CustomPrefabRecipe recipeAsCustom = recipe as CustomPrefabRecipe;
+
+                RemoveFromPreProcessed(recipeFullPrefabName);
+                RemoveFromGameManifest(recipeFullPrefabName, recipe.EnableInSpawnCommand);
+                RemoveFromStringPool(recipeFullPrefabName);
+
+                ModifiedPrefabRecipe recipeAsModified = recipe as ModifiedPrefabRecipe;
+
+                if (recipeAsModified != null)
+                {
+                    if (recipeAsModified.SaveHandling == ModifiedSaveHandling.SaveInBundleSaveList)
+                    {
+                        if (ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.ContainsKey(recipeFullPrefabName))
+                        {
+                            ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.Remove(recipeFullPrefabName);
+                        }
+
+                        if (ModifiedPrefabFullNameToCustomSaveList.ContainsKey(recipeFullPrefabName))
+                        {
+                            ModifiedPrefabFullNameToCustomSaveList.Remove(recipeFullPrefabName);
+                        }
+                    }
+                }
 
                 //kill the prototype                
 
                 BaseEntity prototypeEntity = go.GetComponent<BaseEntity>();
 
-                (prototypeEntity as ICustomEntity).OnCustomPrefabPrototypeEntityUnregistered();
-
-                if (recipe.BaseCombat != null)
+                if (recipeAsCustom != null)
                 {
-                    BaseCombatEntity asBaseCombat = prototypeEntity as BaseCombatEntity;
+                    (prototypeEntity as ICustomEntity).OnCustomPrefabPrototypeEntityUnregistered();
 
-                    if (asBaseCombat != null)
+                    if (recipeAsCustom.BaseCombat != null)
                     {
-                        if (asBaseCombat.baseProtection != null)
+                        BaseCombatEntity asBaseCombat = prototypeEntity as BaseCombatEntity;
+
+                        if (asBaseCombat != null)
                         {
-                            UnityEngine.Object.DestroyImmediate(asBaseCombat.baseProtection);
-                            asBaseCombat.baseProtection = null;
+                            if (asBaseCombat.baseProtection != null)
+                            {
+                                UnityEngine.Object.DestroyImmediate(asBaseCombat.baseProtection);
+                                asBaseCombat.baseProtection = null;
+                            }
                         }
                     }
                 }
 
                 prototypeEntity.Kill(BaseNetworkable.DestroyMode.None);
 
-                ICustomEntity[] iterateOver = BaseNetworkable.serverEntities.OfType<ICustomEntity>().ToArray();
+                var iterateOver = BaseNetworkable.serverEntities.OfType<BaseEntity>().ToArray();
 
                 int countKilled = 0;
 
                 for (int i = 0; i < iterateOver.Length; i++)
                 {
-                    ICustomEntity entity = iterateOver[i];
+                    BaseEntity entity = iterateOver[i];
 
                     if (entity == null)
                     {
@@ -848,7 +1284,7 @@ namespace Oxide.Plugins
                         continue;
                     }
 
-                    if (entity.PrefabName != recipe.FullPrefabName)
+                    if (entity.PrefabName != recipeFullPrefabName)
                     {
                         //not what we're looking for
                         continue;
@@ -867,7 +1303,7 @@ namespace Oxide.Plugins
 
                 if (countKilled > 0)
                 {
-                    Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM, null, countKilled, recipe.FullPrefabName));
+                    Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM, null, countKilled, recipeFullPrefabName));
                 }
 
                 return true;
@@ -1019,14 +1455,15 @@ namespace Oxide.Plugins
 
             private static ListHashSet<string> _prefabNamesToKill = null;
 
+            private static Dictionary<string, (int, bool)> _pluginPrefabCount = null;
+
             private readonly string _fullFileDirectory;
 
             private readonly Plugin _ownerPlugin;
 
             private readonly string _fullFilePath;
 
-
-            internal List<BaseEntity> CustomEntitySaveList = new List<BaseEntity>();
+            public List<BaseEntity> CustomEntitySaveList;
 
             internal CustomPrefabBundle PrefabBundle = null;
 
@@ -1034,12 +1471,14 @@ namespace Oxide.Plugins
             {
                 _cacheByOwner = new Dictionary<Plugin, BinaryData>();
                 _prefabNamesToKill = new ListHashSet<string>();
+                _pluginPrefabCount = new Dictionary<string, (int, bool)>();
             }
 
             internal static void Unload()
             {
                 _cacheByOwner = null;
                 _prefabNamesToKill = null;
+                _pluginPrefabCount = null;
             }
 
             internal static void SaveAll()
@@ -1057,7 +1496,90 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal static void PlayerRequestedPurge(IPlayer iplayer, string partialPluginNameLowercase)
+            internal static void PlayerRequestedPluginCount(IPlayer iplayer, string partialPluginNameLowercase)
+            {
+                BinaryData findMatchingEntry = null;
+
+                for (int i = 0; i < _cacheByOwner.Count; i++)
+                {
+                    KeyValuePair<Plugin, BinaryData> cacheEntry = _cacheByOwner.ElementAt(i);
+
+                    if (cacheEntry.Key.Name.ToLower().StartsWith(partialPluginNameLowercase))
+                    {
+                        findMatchingEntry = cacheEntry.Value;
+                        break;
+                    }
+                }
+
+                if (findMatchingEntry == null)
+                {
+                    iplayer.Reply($"NO PLUGINS FOUND LOLO");
+                    return;
+                }
+
+                //why don't we do that in PlayerRequestedPluginPurge?
+                if (findMatchingEntry.CustomEntitySaveList.IsNullOrEmpty())
+                {
+                    iplayer.Reply($"CUSTOM ENTITY SAVE LIST FOR THAT FILE IS NULL");
+                    return;
+                }
+
+
+                _pluginPrefabCount.Clear();
+
+                for (int i = 0; i < findMatchingEntry.CustomEntitySaveList.Count; i++)
+                {
+                    var entry = findMatchingEntry.CustomEntitySaveList[i];
+
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    bool contains;
+
+                    string fullPrefabName = entry.PrefabName;
+
+                    if (!_pluginPrefabCount.TryGetValue(fullPrefabName, out var currentTuple))
+                    {
+                        currentTuple.Item1 = 0;
+                        currentTuple.Item2 = entry is ICustomEntity;
+
+                        contains = false;
+                    }
+                    else
+                    {
+                        contains = true;
+                    }
+
+                    currentTuple.Item1++;
+
+                    if (contains)
+                    {
+                        _pluginPrefabCount[fullPrefabName] = currentTuple;
+                    }
+                    else
+                    {
+                        _pluginPrefabCount.Add(fullPrefabName, currentTuple);
+                    }
+                }
+
+                _pluginPrefabCount = _pluginPrefabCount.OrderByDescending(e => e.Value.Item2).ThenByDescending(e => e.Value.Item1).ThenBy(e => e.Key).ToDictionary(e => e.Key, e => e.Value);
+
+                StringBuilder builder = new StringBuilder("ENTITY COUNTS (custom first, then vanilla): \n");
+
+                foreach (var entry in _pluginPrefabCount)
+                {
+                    builder.Append(entry.Value.Item1.ToString("00000"));
+                    builder.Append(" of ");
+                    builder.Append(entry.Key);
+                    builder.AppendLine();
+                }
+
+                iplayer.Reply(builder.ToString());
+            }
+
+            internal static void PlayerRequestedPluginPurge(IPlayer iplayer, string partialPluginNameLowercase)
             {
                 if (_cacheByOwner.Count == 0)
                 {
@@ -1084,16 +1606,13 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                //k what now.
-                //just get the full prefab names from the bundle?
-
                 int countKilled = 0;
 
                 _prefabNamesToKill.Clear();
 
                 for (int i = 0; i < findMatchingEntry.PrefabBundle.Recipes.Length; i++)
                 {
-                    CustomPrefabRecipe recipe = findMatchingEntry.PrefabBundle.Recipes[i];
+                    GenericPrefabRecipe recipe = findMatchingEntry.PrefabBundle.Recipes[i];
 
                     _prefabNamesToKill.Add(recipe.FullPrefabName);
                 }
@@ -1170,6 +1689,8 @@ namespace Oxide.Plugins
 
                 _fullFilePath = Path.Combine(_fullFileDirectory, $"{ownerPlugin.Name}.sav");
 
+                CustomEntitySaveList = new List<BaseEntity>();
+
                 EnsureFileDirectory();
             }
 
@@ -1226,12 +1747,11 @@ namespace Oxide.Plugins
 
             internal void Save()
             {
-                int entityAmount = CustomEntitySaveList.Count;
-
-                int countVanillaAndCustom = 0;
+                int countAll = CustomEntitySaveList.Count;
 
                 int countVanilla = 0;
                 int countCustom = 0;
+                int countSaved = 0;
 
                 try
                 {
@@ -1239,56 +1759,149 @@ namespace Oxide.Plugins
 
                     ShiftSaveBackups();
 
+                    bool swaparoo = false;
+                    uint swaperooPrefabID = 0;
+                    uint originalPrefabID = 0;
+
+                    //so also we need to deal with invalids somehow.
+                    //for now, just test if things were not broken by refactoring.
+                    //ok, they work fine, seemingly
+
+                    List<int> indicesToRemove = Pool.GetList<int>();
+
                     using (FileStream fileStream = new FileStream(_fullFilePath, FileMode.Create))
                     {
                         using (BinaryWriter finalWriter = new BinaryWriter(fileStream))
                         {
-                            //write the community instance net id...
-                            finalWriter.Write(CommunityEntity.ServerInstance.net.ID.Value);
-                            //the amount of entities...
-                            finalWriter.Write(entityAmount);
-                            //and optionally...
-                            for (int i = 0; i < entityAmount; i++)
+                            using (MemoryStream intermediateMemoryStream = new MemoryStream())
                             {
-                                BaseEntity entity = CustomEntitySaveList[i];
-                                MemoryStream vanillaMemoryStream = entity.GetSaveCache();
-                                long vanillaMemoryStreamLength = vanillaMemoryStream.Length;
-                                //first, vanilla stuff, that always happens...
-                                finalWriter.Write((uint)vanillaMemoryStreamLength); //4 bytes
-                                finalWriter.Write(vanillaMemoryStream.GetBuffer(), 0, (int)vanillaMemoryStreamLength);
-                                //this may or may not be a vanilla thing, so handle accordingly
-                                ICustomEntity asInterface = entity as ICustomEntity;
-
-                                if (asInterface != null)
+                                using (BinaryWriter intermediateWriter = new BinaryWriter(intermediateMemoryStream))
                                 {
-
-                                    using (MemoryStream customMemoryStream = new MemoryStream(4))
+                                    //and optionally...
+                                    for (int i = 0; i < countAll; i++)
                                     {
-                                        using (BinaryWriter customWriter = new BinaryWriter(customMemoryStream))
+                                        BaseEntity entity = CustomEntitySaveList[i];
+
+                                        //now here, you're not doing any null checks... or checks if it's destroyed.
+
+                                        if (entity == null)
                                         {
-                                            asInterface.Handler.SaveExtra(customMemoryStream, customWriter);
-                                            long customMemoryStreamLength = customMemoryStream.Length;
-                                            //and now we write custom stuff.
-                                            finalWriter.Write((uint)customMemoryStreamLength); //4 bytes
-                                            finalWriter.Write(customMemoryStream.GetBuffer(), 0, (int)customMemoryStreamLength);
+                                            indicesToRemove.Add(i);
+                                            continue;
                                         }
+
+                                        if (entity.net == null)
+                                        {
+                                            indicesToRemove.Add(i);
+                                            continue;
+                                        }
+
+                                        if (entity.IsDestroyed)
+                                        {
+                                            indicesToRemove.Add(i);
+                                            continue;
+                                        }
+
+                                        if (entity.enableSaving)
+                                        {
+                                            //just a safeguard lol.
+                                            indicesToRemove.Add(i);
+                                            continue;
+                                        }
+
+                                        swaparoo = false;
+
+                                        //if the full prefab name of that entity is found in this cache,
+                                        //it means that a swaperoo is required.
+
+                                        if (CustomPrefabs.ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.TryGetValue(entity.PrefabName, out swaperooPrefabID))
+                                        {
+                                            swaparoo = true;
+                                            originalPrefabID = entity.prefabID;
+                                        }
+
+                                        //Do a swap?
+                                        if (swaparoo)
+                                        {
+                                            entity.prefabID = swaperooPrefabID;
+                                            entity.InvalidateNetworkCache();
+                                        }
+
+                                        //this is done always, even without swaperoo
+
+                                        MemoryStream vanillaMemoryStream = entity.GetSaveCache();
+
+                                        //Do a roo?
+                                        if (swaparoo)
+                                        {
+                                            entity.prefabID = originalPrefabID;
+                                        }
+
+                                        long vanillaMemoryStreamLength = vanillaMemoryStream.Length;
+                                        //first, vanilla stuff, that always happens...
+                                        intermediateWriter.Write((uint)vanillaMemoryStreamLength); //4 bytes
+                                        intermediateWriter.Write(vanillaMemoryStream.GetBuffer(), 0, (int)vanillaMemoryStreamLength);
+                                        //this may or may not be a vanilla thing, so handle accordingly
+                                        ICustomEntity asInterface = entity as ICustomEntity;
+
+                                        if (asInterface != null)
+                                        {
+
+                                            using (MemoryStream customMemoryStream = new MemoryStream(4))
+                                            {
+                                                using (BinaryWriter customWriter = new BinaryWriter(customMemoryStream))
+                                                {
+                                                    asInterface.Handler.SaveExtra(customMemoryStream, customWriter);
+                                                    long customMemoryStreamLength = customMemoryStream.Length;
+                                                    //and now we write custom stuff.
+                                                    intermediateWriter.Write((uint)customMemoryStreamLength); //4 bytes
+                                                    intermediateWriter.Write(customMemoryStream.GetBuffer(), 0, (int)customMemoryStreamLength);
+                                                }
+                                            }
+
+                                            countCustom++;
+                                        }
+                                        else
+                                        {
+                                            //is it normal vanilla, or modified vanilla?
+
+
+                                            countVanilla++;
+                                        }
+
+                                        countSaved++;
                                     }
 
-                                    countCustom++;
-                                }
-                                else
-                                {
-                                    countVanilla++;
-                                }
+                                    finalWriter.Write(CommunityEntity.ServerInstance.net.ID.Value);
 
+                                    finalWriter.Write(countSaved);
 
-                                countVanillaAndCustom++;
+                                    long intermediateMemoryStringLength = intermediateMemoryStream.Length;
+
+                                    finalWriter.Write(intermediateMemoryStream.GetBuffer(), 0, (int)intermediateMemoryStringLength);
+                                }
                             }
                         }
                     }
 
+                    if (indicesToRemove.Count > 0)
+                    {
+                        indicesToRemove.Sort((a, b) => b.CompareTo(a));
 
-                    Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES, null, countVanillaAndCustom, entityAmount, countCustom, countVanilla, _fullFilePath));
+                        foreach (int index in indicesToRemove)
+                        {
+                            if (!(index >= 0 && index < countAll))
+                            {
+                                CustomEntitySaveList.RemoveAt(index);
+                            }
+                        }
+                    }
+
+                    int countInvalid = indicesToRemove.Count;
+
+                    Pool.FreeList(ref indicesToRemove);
+
+                    Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
 
 
                 }
@@ -1545,73 +2158,60 @@ namespace Oxide.Plugins
         public class CustomPrefabBundle
         {
             public Plugin Owner;
-            public CustomPrefabRecipe[] Recipes;
+            public GenericPrefabRecipe[] Recipes;
 
-            public CustomPrefabBundle(Plugin owner, params CustomPrefabRecipe[] recipes)
+            public CustomPrefabBundle(Plugin owner, params GenericPrefabRecipe[] recipes)
             {
                 Owner = owner;
                 Recipes = recipes;
             }
         }
 
-        public struct CustomPrefabRecipe : IEquatable<CustomPrefabRecipe>
+        public class GenericPrefabRecipe
         {
             public readonly string ShortPrefabName;
             public readonly string FullPrefabName;
-            public readonly Layer Layer;
-
             public readonly bool EnableInSpawnCommand;
+
+            public GenericPrefabRecipe(string shortName, bool enableInSpawnCommand = true)
+            {
+                ShortPrefabName = shortName;
+                FullPrefabName = SanitizedFullPrefabName(shortName);
+                EnableInSpawnCommand = enableInSpawnCommand;
+            }
+        }
+
+        public class ModifiedPrefabRecipe : GenericPrefabRecipe
+        {
+            public readonly string OriginalFullPrefabName;
+
+            public readonly Func<BaseEntity, bool> ModificationFunction;
+
+            public readonly ModifiedSaveHandling SaveHandling;
+
+            public ModifiedPrefabRecipe(string shortName, string originalFullPrefabName, Func<BaseEntity, bool> modificationFunction = null, bool enableInSpawnCommand = true, ModifiedSaveHandling saveHandling = ModifiedSaveHandling.DontSave) : base(shortName, enableInSpawnCommand)
+            {
+                OriginalFullPrefabName = originalFullPrefabName;
+                ModificationFunction = modificationFunction;
+                SaveHandling = saveHandling;
+            }
+        }
+
+        public class CustomPrefabRecipe : GenericPrefabRecipe
+        {
+            public readonly Layer Layer;
 
             public readonly Type EntityType;
 
             public readonly CustomPrefabBaseCombat BaseCombat;
 
-            public CustomPrefabRecipe(string shortName, Type entityType, Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true)
+            public CustomPrefabRecipe(string shortName, Type entityType, Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true) : base(shortName, enableInSpawnCommand)
             {
-                ShortPrefabName = shortName;
-                FullPrefabName = SanitizedFullPrefabName(shortName);
                 EntityType = entityType;
                 Layer = layer;
                 BaseCombat = baseCombat;
-                EnableInSpawnCommand = enableInSpawnCommand;
             }
 
-            public static bool operator ==(CustomPrefabRecipe lhs, CustomPrefabRecipe rhs)
-            {
-                return lhs.Equals(rhs);
-            }
-
-            public static bool operator !=(CustomPrefabRecipe lhs, CustomPrefabRecipe rhs)
-            {
-                return !lhs.Equals(rhs);
-            }
-
-            public bool Equals(CustomPrefabRecipe other)
-            {
-                return other.ShortPrefabName == ShortPrefabName;
-            }
-
-            public override int GetHashCode()
-            {
-                return ShortPrefabName.GetHashCode();
-            }
-
-            public override bool Equals(object obj)
-            {
-                CustomPrefabRecipe recipe = (CustomPrefabRecipe)obj;
-
-                if (recipe != default(CustomPrefabRecipe))
-                {
-                    return Equals(recipe);
-                }
-
-                return base.Equals(obj);
-            }
-
-            public override string ToString()
-            {
-                return ShortPrefabName;
-            }
         }
         #endregion
 
@@ -1686,6 +2286,91 @@ namespace Oxide.Plugins
 
             void OnEntitySaveForNetwork(BaseNetworkable.SaveInfo info);
         }
+
+        public enum ModifiedSaveHandling
+        {
+            DontSave,
+            SaveInVanillaSaveList,
+            SaveInBundleSaveList
+        }
+
+        //wait a sec. You're adding. That's nice...
+        //...but what about removing?
+        //...shall we keep the mono alive, instead of destroying it...
+        //...and do OnDestroy()? And there ignore if Unloading?
+        //...but how do we detect if the bundle is unloading?
+        //...I think that during each save, if a null element is detected in the save list,
+        //...
+
+        public class ModifiedBundleSaveBehaviour : MonoBehaviour
+        {
+            public string RecipeFullPrefabName = string.Empty;
+            public bool AddToCustomSaveList = false;
+
+            BaseEntity modifiedEntity;
+
+            void Awake()
+            {
+                if (RecipeFullPrefabName == string.Empty)
+                {
+                    //means most likely this is a prototype.
+                    return;
+                }
+
+                modifiedEntity = GetComponent<BaseEntity>();
+
+                if (modifiedEntity.PrefabName != RecipeFullPrefabName)
+                {
+                    CustomPrefabs.NaughtyReplaceEntityFullPrefabName(modifiedEntity, RecipeFullPrefabName);
+                }
+            }
+
+            //this won't happen unless instantiated. Start() so the entity has time to populate inventory, spawn subentities etc.
+            void Start()
+            {
+                if (modifiedEntity == null)
+                {
+                    goto DestroyStuff;
+                    //congrats, I think this is the first time you actually found a use for "goto" and labels, like it's 2002 again and you're
+                    //messing about in QBASIC on Windows 98
+                }
+
+                //so as it turns out, somewhere along the way of instantiation with GameManager.server.Create and/or spawn command,
+                //if a "prototype" MonoBehaviour living in the DontDestroyOnLoad scene has a List<T>, like List<BaseEntity>,
+                //when we use the `spawn` command and/or GameManager.server.CreateEntity (presumably, haven't even bothered checking that case)
+                //the new instance will have that List cloned - instead of having its value set to the same reference as the prototype.
+                //this goes against all Instantiation intuitions, but at this point, we just want a solution that works.
+                //originally this class just had a field with a reference to the save list, but clearly, that is not the way to go!
+
+                if (!AddToCustomSaveList)
+                {
+                    goto DestroyStuff;
+                }
+
+                List<BaseEntity> entitySaveList;
+
+                if (!CustomPrefabs.ModifiedPrefabFullNameToCustomSaveList.TryGetValue(RecipeFullPrefabName, out entitySaveList))
+                {
+
+                    goto DestroyStuff;
+                }
+
+                CustomPrefabs.EnsureMovedToCustomSaveListRecursivelyTopDown(modifiedEntity, entitySaveList);
+
+                DestroyStuff:
+
+                Destroy(this);
+            }
+        }
+
+
+        //SO ACTUALLY.
+
+        //BinaryData can handle this, like it handles saving. Let's keep it confined.
+
+        //if a vanilla prefabID is found in the Dictionary of modified prefab IDs,
+
+        //then we alter the original prefab id of that modifed base entity during saving to the modified prefab id.
 
         public class CustomHandler
         {
@@ -1768,7 +2453,17 @@ namespace Oxide.Plugins
                         return;
                     }
 
-                    DestroyClientsideForAll(_ownerEntity, true);
+                    if (_ownerEntity.net.group == null)
+                    {
+                        return;
+                    }
+
+                    if (_ownerEntity.net.group.subscribers == null)
+                    {
+                        return;
+                    }
+
+                    DestroyClientsideForSendInfo(_ownerEntity, new SendInfo(_ownerEntity.net.group.subscribers), true);
                 }
             }
 
@@ -2738,12 +3433,14 @@ namespace Oxide.Plugins
             public static RaycastHit[] ReusableRaycastBuffer;
 
             public static int ReusableColCount = 0;
+            public static int ReusableHitCount = 0;
 
             public static void Init()
             {
                 ReusableColBuffer = new Collider[2048];
                 ReusableRaycastBuffer = new RaycastHit[2048];
                 ReusableColCount = 0;
+                ReusableHitCount = 0;
             }
 
             public static void Unload()
@@ -2751,6 +3448,7 @@ namespace Oxide.Plugins
                 ReusableColBuffer = null;
                 ReusableRaycastBuffer = null;
                 ReusableColCount = 0;
+                ReusableHitCount = 0;
             }
 
             private static void BufferForVisEntitiesUniqueClear<T>(ListHashSet<T> list)
@@ -2778,6 +3476,16 @@ namespace Oxide.Plugins
                 BufferForVisEntitiesUniqueClear(listToClear);
             }
 
+            public static void RaycastNonAlloc(Vector3 origin, Vector3 direction, float maxDistance, int layerMask = -1, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.UseGlobal)
+            {
+                ReusableHitCount = Physics.RaycastNonAlloc(origin, direction, ReusableRaycastBuffer, maxDistance, layerMask, queryTriggerInteraction);
+            }
+
+            public static void SpherecastNonAlloc(Vector3 origin, float radius, Vector3 direction, float maxDistance, int layerMask = -1, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.UseGlobal)
+            {
+                ReusableHitCount = Physics.SphereCastNonAlloc(origin, radius, direction, ReusableRaycastBuffer, maxDistance, layerMask, queryTriggerInteraction);
+            }
+
             public static void GetCollidersWithinOBB(OBB bounds, int layerMask = -1, QueryTriggerInteraction triggerInteraction = QueryTriggerInteraction.Ignore)
             {
                 int num = ReusableColCount;
@@ -2785,10 +3493,11 @@ namespace Oxide.Plugins
                 ClearBufferExcess(num);
             }
 
-            private static void BufferForVisEntitiesUniqueWithinRadius<T>(Vector3 position, float radius, ListHashSet<T> listToClear, int layerMask = -1, QueryTriggerInteraction triggerInteraction = QueryTriggerInteraction.Ignore)
+            private static void BufferForVisEntitiesUniqueWithinRadius<T>(Vector3 position, float radius, ListHashSet<T> listPrimaryToClear, int layerMask = -1, QueryTriggerInteraction triggerInteraction = QueryTriggerInteraction.Ignore, ListHashSet<T> listSecondaryToClear = null)
             {
                 GetCollidersWithinRadius(position, radius, layerMask, triggerInteraction);
-                BufferForVisEntitiesUniqueClear(listToClear);
+                listSecondaryToClear?.Clear();
+                BufferForVisEntitiesUniqueClear(listPrimaryToClear);
             }
 
             public static void GetCollidersWithinRadius(Vector3 position, float radius, int layerMask, QueryTriggerInteraction triggerInteraction)
@@ -2798,8 +3507,13 @@ namespace Oxide.Plugins
                 ClearBufferExcess(num);
             }
 
-            public static void ProcessColliderBufferInto<T>(ListHashSet<T> list, Func<T, bool> conditionForAdding = null, bool stopAfterFirstFound = false) where T : BaseEntity
+
+            public static void ProcessColliderBufferInto<T>(ListHashSet<T> listPrimary, Func<T, bool> conditionForAddingPrimary = null, ListHashSet<T> listSecondary = null, Func<T, bool> conditionForAddingSecondary = null, bool stopAfterFirstFound = false) where T : BaseEntity
             {
+                bool conditionForAddingPrimaryIsNotNullNull = conditionForAddingPrimary != null;
+                bool conditionForAddingSecondaryIsNotNull = conditionForAddingSecondary != null;
+                bool secondaryListIsNull = listSecondary == null;
+
                 for (int i = 0; i < ReusableColCount; i++)
                 {
                     Collider collider = ReusableColBuffer[i];
@@ -2813,22 +3527,41 @@ namespace Oxide.Plugins
                             continue;
                         }
 
-                        if (conditionForAdding != null)
+                        if (listPrimary.Contains(val))
                         {
-                            if (!conditionForAdding(val))
+                            //if it's in the primary list already, means we checked it for both
+                            //primary and secondary conditions
+                            continue;
+                        }
+
+                        if (conditionForAddingPrimaryIsNotNullNull)
+                        {
+                            if (!conditionForAddingPrimary(val))
                             {
                                 continue;
                             }
                         }
 
-                        if (!list.Contains(val))
-                        {
-                            list.Add(val);
+                        listPrimary.Add(val);
 
-                            if (stopAfterFirstFound)
+                        if (secondaryListIsNull)
+                        {
+                            continue;
+                        }
+
+                        if (conditionForAddingSecondaryIsNotNull)
+                        {
+                            if (!conditionForAddingSecondary(val))
                             {
-                                return;
+                                continue;
                             }
+                        }
+
+                        listSecondary.Add(val);
+
+                        if (stopAfterFirstFound)
+                        {
+                            return;
                         }
 
                     }
@@ -2840,6 +3573,13 @@ namespace Oxide.Plugins
                 BufferForVisEntitiesUniqueWithinRadius(position, radius, list, layerMask, interaction);
                 ProcessColliderBufferInto(list, conditionForAdding);
             }
+
+            public static void VisEntitiesUniqueWithinRadiusPrimarySecondary<T>(Vector3 position, float radius, ListHashSet<T> listPrimary, int layerMask, QueryTriggerInteraction interaction, Func<T, bool> conditionForAddingPrimary, ListHashSet<T> listSecondary, Func<T, bool> conditionForAddingSecondary) where T : BaseEntity
+            {
+                BufferForVisEntitiesUniqueWithinRadius(position, radius, listPrimary, layerMask, interaction, listSecondary);
+                ProcessColliderBufferInto(listPrimary, conditionForAddingPrimary, listSecondary, conditionForAddingSecondary);
+            }
+
             public static void VisEntitiesUniqueWithinOBB<T>(OBB obb, ListHashSet<T> list, int layerMask, QueryTriggerInteraction interaction = QueryTriggerInteraction.Ignore, Func<T, bool> conditionForAdding = null) where T : BaseEntity
             {
                 BufferForVisEntitiesUniqueWithinOBB(obb, list, layerMask, interaction);
@@ -2849,6 +3589,101 @@ namespace Oxide.Plugins
         #endregion
 
         #region HELPERS
+        public static string DumpObjectFields<T>(T obj)
+        {
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+            var fields = typeof(T).GetFields(flags);
+
+            var sb = new StringBuilder();
+            foreach (var field in fields)
+            {
+                // Handling for static fields to avoid passing instance
+                var value = field.IsStatic ? field.GetValue(null) : field.GetValue(obj);
+                sb.Append(field.Name);
+                sb.Append(" = ");
+                sb.Append(value);
+                sb.AppendLine();
+            }
+
+            // Removes the last comma and space if sb is not empty
+            if (sb.Length > 0)
+            {
+                sb.Remove(sb.Length - 2, 2);
+            }
+
+            return sb.ToString();
+        }
+
+        public static NEW TryComponentReplacement<OLD, NEW>(GameObject go, bool onlyOneNewAllowed = true, bool printDebug = false) where OLD : Component where NEW : Component
+        {
+            var typeofOld = typeof(OLD);
+            var typeofNew = typeof(NEW);
+
+            if (go == null)
+            {
+                Instance.PrintError($"{MSG(MSG_TRY_COMPO_REPLACE_ERROR, null, typeofOld, typeofNew)} {MSG(MSG_TRY_COMPO_REPLACE_ERROR_GAMEOBJECT_NULL)}");
+                return null;
+            }
+
+            var oldComponent = go.GetComponent<OLD>();
+            if (oldComponent == null)
+            {
+                Instance.PrintError($"{MSG(MSG_TRY_COMPO_REPLACE_ERROR, null, typeofOld, typeofNew)} {MSG(MSG_TRY_COMPO_REPLACE_ERROR_NO_OLD_COMPO_ATTACHED, null, typeofOld)}");
+                return null;
+            }
+
+            if (onlyOneNewAllowed)
+            {
+                var maybeOldComponentOfNewType = go.GetComponent<NEW>();
+                if (maybeOldComponentOfNewType != null)
+                {
+                    Instance.PrintError($"{MSG(MSG_TRY_COMPO_REPLACE_ERROR, null, typeofOld, typeofNew)} {MSG(MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO, null, typeofNew)}");
+                    return null;
+                }
+            }
+
+            var newComponent = go.AddComponent<NEW>();
+
+            bool newIsSubclassOfOld = typeofNew.IsSubclassOf(typeofOld);
+
+            if (!newIsSubclassOfOld)
+            {
+                UnityEngine.Object.DestroyImmediate(oldComponent);
+
+                return newComponent;
+            }
+
+            StringBuilder buildDebug = null;
+
+            if (printDebug)
+            {
+                buildDebug = new StringBuilder(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_HEADER, null, typeofNew, typeofOld));
+            }
+
+            //naughty reflection
+
+            var fields = typeofOld.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+            foreach (var field in fields)
+            {
+                var value = field.GetValue(oldComponent);
+                field.SetValue(newComponent, value);
+
+                if (printDebug)
+                {
+                    buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO, null, field.Name, value));
+                }
+            }
+
+            if (printDebug)
+            {
+                Instance.PrintWarning(buildDebug.ToString());
+            }
+
+            UnityEngine.Object.DestroyImmediate(oldComponent);
+
+            return newComponent;
+        }
+
 
         public static string GetBackupName(string fileName, int i) => string.Format(FORMAT_FILENAME, fileName, i);
 

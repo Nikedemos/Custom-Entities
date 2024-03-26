@@ -123,6 +123,9 @@ namespace Oxide.Plugins
             VisualWaypointEntity.Graphs = null;
             VisualWaypointEntity.AllWaypoints = null;
 
+            WaypointEntityRecipe = null;
+            WaypointBrushRecipe = null;
+
             TestBundle.Recipes = null;
             TestBundle = null;
         }
@@ -360,7 +363,7 @@ namespace Oxide.Plugins
                     //unless we can get some waypoints
 
                     //stop after first found
-                    CustomEntities.CastingNonAlloc.ProcessColliderBufferInto(_lastWaypointsNearby, null, true);
+                    CustomEntities.CastingNonAlloc.ProcessColliderBufferInto(_lastWaypointsNearby, null, null, null, true);
 
                     int found = _lastWaypointsNearby.Count;
 
