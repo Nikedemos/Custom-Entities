@@ -13,10 +13,11 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
+using static ConsoleSystem;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.6")]
+    [Info("Custom Entities", "Nikedemos", "1.0.7")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -2972,13 +2973,12 @@ namespace Oxide.Plugins
                         bool flag = info.Weapon is BaseMelee;
                         if (isServer && (!flag || sendsMeleeHitNotification))
                         {
-                            var initiatorPlayer = info.Initiator as BasePlayer;
-
                             //the solution was obvious and staring us in the face all along 
                             //if the client receives an RPC for the HitNotify, but we mention an entity net ID that actualy got hit
                             //and that entity has a client-sided prefab that suggests it's NOT a BaseCombatEntity, it will not play-client-side.
                             //so the solution is to make the player think they... hit themselves. Thanks 0xF!
-                            initiatorPlayer.ClientRPCPlayerAndSpectators(null, initiatorPlayer, "HitNotify", false); //this must be false
+
+                            ClientRPC(RpcTarget.PlayerAndSpectators("HitNotify", info.Initiator as BasePlayer), false); //this must be false
                         }
                     }
                 }
@@ -3205,7 +3205,7 @@ namespace Oxide.Plugins
                         if (isServer && (!flag || sendsMeleeHitNotification))
                         {
                             //bool arg = info.Initiator.net.connection == info.Predicted;
-                            ClientRPCPlayerAndSpectators(null, info.Initiator as BasePlayer, "HitNotify", false); //this must be false
+                            ClientRPC(RpcTarget.PlayerAndSpectators("HitNotify", info.Initiator as BasePlayer), false); //this must be false
                         }
                     }
                 }
