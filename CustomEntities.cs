@@ -1969,7 +1969,7 @@ namespace Oxide.Plugins
 
                                         while (true)
                                         {
-                                            //first we read the vanilla bytes...
+                                            //first we read the z bytes...
 
                                             int vanillaLength = reader.ReadInt32();
 
@@ -2061,11 +2061,9 @@ namespace Oxide.Plugins
                                         countVanillaAndCustom++;
 
                                         ICustomEntity asInterface = key as ICustomEntity;
-
+                                        byte[] maybeSomeExtraData = null;
                                         if (asInterface != null)
                                         {
-                                            byte[] maybeSomeExtraData;
-
                                             if (dictionaryCustom.TryGetValue(asInterface, out maybeSomeExtraData))
                                             {
                                                 using (MemoryStream customStream = new MemoryStream(maybeSomeExtraData))
@@ -2075,7 +2073,6 @@ namespace Oxide.Plugins
                                                         asInterface.Handler.LoadExtra(customStream, customReader);
                                                     }
                                                 }
-
                                                 countCustom++;
                                             }
                                         }
@@ -2088,6 +2085,17 @@ namespace Oxide.Plugins
 
                                         key.Spawn();
                                         key.Load(info);
+
+                                        if (maybeSomeExtraData != null)
+                                        {
+                                            using (MemoryStream customStream = new MemoryStream(maybeSomeExtraData))
+                                            {
+                                                using (BinaryReader customReader = new BinaryReader(customStream))
+                                                {
+                                                    asInterface.Handler.PostLoadExtra(customStream, customReader);
+                                                }
+                                            }
+                                        }
 
                                         if (key.IsValid())
                                         {
@@ -2284,9 +2292,11 @@ namespace Oxide.Plugins
             void SaveExtra(Stream stream, BinaryWriter writer);
 
             void LoadExtra(Stream stream, BinaryReader reader);
+            void PostLoadExtra(Stream stream, BinaryReader reader);
 
             void OnEntitySaveForNetwork(BaseNetworkable.SaveInfo info);
         }
+
 
         public enum ModifiedSaveHandling
         {
@@ -2667,6 +2677,13 @@ namespace Oxide.Plugins
 
                 _ownerEntityAsInterface.LoadExtra(stream, reader);
             }
+            
+            internal void PostLoadExtra(Stream stream, BinaryReader reader)
+            {
+                ClientsidePrefabID = reader.ReadUInt32();
+
+                _ownerEntityAsInterface.PostLoadExtra(stream, reader);
+            }
 
 
             internal void DestroyShared()
@@ -2851,6 +2868,10 @@ namespace Oxide.Plugins
 
             }
 
+            public virtual void PostLoadExtra(Stream stream, BinaryReader reader)
+            {
+
+            }
 
         }
         #endregion
@@ -3060,6 +3081,11 @@ namespace Oxide.Plugins
             }
 
             public virtual void LoadExtra(Stream stream, BinaryReader reader)
+            {
+
+            }
+
+            public virtual void PostLoadExtra(Stream stream, BinaryReader reader)
             {
 
             }
@@ -3287,6 +3313,11 @@ namespace Oxide.Plugins
             }
 
             public virtual void LoadExtra(Stream stream, BinaryReader reader)
+            {
+
+            }
+
+            public virtual void PostLoadExtra(Stream stream, BinaryReader reader)
             {
 
             }
