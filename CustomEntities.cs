@@ -17,7 +17,7 @@ using static ConsoleSystem;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.7")]
+    [Info("Custom Entities", "Nikedemos", "1.0.8")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -429,7 +429,7 @@ namespace Oxide.Plugins
 
             public static Dictionary<string, List<BaseEntity>> ModifiedPrefabFullNameToCustomSaveList = null;
 
-            internal static void Init()
+            public static void Init()
             {
                 _emptyImpactGameObjectRef = new GameObjectRef();
                 _prefabsPreProcessedCustom = new Dictionary<string, GameObject>();
@@ -448,7 +448,7 @@ namespace Oxide.Plugins
                 ModifiedPrefabFullNameToCustomSaveList = new Dictionary<string, List<BaseEntity>>();
             }
 
-            internal static void Unload()
+            public static void Unload()
             {
                 _emptyImpactGameObjectRef = null;
                 _prefabsPreProcessedCustom = null;
@@ -1466,23 +1466,23 @@ namespace Oxide.Plugins
 
             public List<BaseEntity> CustomEntitySaveList;
 
-            internal CustomPrefabBundle PrefabBundle = null;
+            public CustomPrefabBundle PrefabBundle = null;
 
-            internal static void Init()
+            public static void Init()
             {
                 _cacheByOwner = new Dictionary<Plugin, BinaryData>();
                 _prefabNamesToKill = new ListHashSet<string>();
                 _pluginPrefabCount = new Dictionary<string, (int, bool)>();
             }
 
-            internal static void Unload()
+            public static void Unload()
             {
                 _cacheByOwner = null;
                 _prefabNamesToKill = null;
                 _pluginPrefabCount = null;
             }
 
-            internal static void SaveAll()
+            public static void SaveAll()
             {
                 if (_cacheByOwner.IsNullOrEmpty())
                 {
@@ -1497,7 +1497,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal static void PlayerRequestedPluginCount(IPlayer iplayer, string partialPluginNameLowercase)
+            public static void PlayerRequestedPluginCount(IPlayer iplayer, string partialPluginNameLowercase)
             {
                 BinaryData findMatchingEntry = null;
 
@@ -1580,7 +1580,7 @@ namespace Oxide.Plugins
                 iplayer.Reply(builder.ToString());
             }
 
-            internal static void PlayerRequestedPluginPurge(IPlayer iplayer, string partialPluginNameLowercase)
+            public static void PlayerRequestedPluginPurge(IPlayer iplayer, string partialPluginNameLowercase)
             {
                 if (_cacheByOwner.Count == 0)
                 {
@@ -1654,7 +1654,7 @@ namespace Oxide.Plugins
 
             }
 
-            internal static BinaryData SummonBinaryData(Plugin maybeOwnerPlugin)
+            public static BinaryData SummonBinaryData(Plugin maybeOwnerPlugin)
             {
                 BinaryData resultData;
 
@@ -1670,7 +1670,7 @@ namespace Oxide.Plugins
                 return resultData;
             }
 
-            internal static void ForgetBinaryData(Plugin maybeOwnerPlugin)
+            public static void ForgetBinaryData(Plugin maybeOwnerPlugin)
             {
                 if (!_cacheByOwner.TryGetValue(maybeOwnerPlugin, out BinaryData data))
                 {
@@ -1682,7 +1682,7 @@ namespace Oxide.Plugins
                 _cacheByOwner.Remove(maybeOwnerPlugin);
             }
 
-            internal BinaryData(Plugin ownerPlugin)
+            public BinaryData(Plugin ownerPlugin)
             {
                 _ownerPlugin = ownerPlugin;
 
@@ -1705,7 +1705,7 @@ namespace Oxide.Plugins
                 Directory.CreateDirectory(_fullFileDirectory);
             }
 
-            internal void ShiftSaveBackups()
+            public void ShiftSaveBackups()
             {
                 if (!File.Exists(_fullFilePath))
                 {
@@ -1746,7 +1746,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal void Save()
+            public void Save()
             {
                 int countAll = CustomEntitySaveList.Count;
 
@@ -1913,7 +1913,7 @@ namespace Oxide.Plugins
 
             }
 
-            internal void Load()
+            public void Load()
             {
                 EnsureFileDirectory();
 
@@ -2494,7 +2494,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal void OnParentChanging(BaseEntity oldParent, BaseEntity newParent)
+            public void OnParentChanging(BaseEntity oldParent, BaseEntity newParent)
             {
                 //TODO:
                 //the purpose of this method is that when a custom entity switches parents,
@@ -2552,7 +2552,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal CustomHandler(BaseEntity ownerEntity, string defaultClientsidePrefabName, BaseEntity prototypeEntity)
+            public CustomHandler(BaseEntity ownerEntity, string defaultClientsidePrefabName, BaseEntity prototypeEntity)
             {
                 _ownerEntity = ownerEntity;
 
@@ -2575,7 +2575,7 @@ namespace Oxide.Plugins
                 _ownerEntityAsInterface.SaveListInDataFile = useThisList;
             }
 
-            internal void PreServerLoad()
+            public void PreServerLoad()
             {
                 if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
@@ -2586,7 +2586,7 @@ namespace Oxide.Plugins
                 
             }
 
-            internal void ServerInit()
+            public void ServerInit()
             {
                 EnableSavingToDisk = _ownerEntityAsInterface.EnableSavingToDiskByDefault; //
 
@@ -2605,7 +2605,7 @@ namespace Oxide.Plugins
 
             }
 
-            internal void Save(BaseNetworkable.SaveInfo info)
+            public void Save(BaseNetworkable.SaveInfo info)
             {
                 if (info.forDisk)
                 {
@@ -2633,7 +2633,7 @@ namespace Oxide.Plugins
                 _ownerEntityAsInterface.OnEntitySaveForNetwork(info);
             }
 
-            internal void Load(BaseNetworkable.LoadInfo info)
+            public void Load(BaseNetworkable.LoadInfo info)
             {
                 if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
@@ -2654,14 +2654,14 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal void SaveExtra(Stream stream, BinaryWriter writer)
+            public void SaveExtra(Stream stream, BinaryWriter writer)
             {
                 writer.Write(_clientsidePrefabID);
 
                 _ownerEntityAsInterface.SaveExtra(stream, writer);
             }
 
-            internal void LoadExtra(Stream stream, BinaryReader reader)
+            public void LoadExtra(Stream stream, BinaryReader reader)
             {
                 ClientsidePrefabID = reader.ReadUInt32();
 
@@ -2669,7 +2669,7 @@ namespace Oxide.Plugins
             }
 
 
-            internal void DestroyShared()
+            public void DestroyShared()
             {
                 //I think this is th eonly part that doesn't care whether vanilla handles it or not!
                 //Annihilation is important. We need to get rid of all those nasty entities.
