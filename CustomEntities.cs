@@ -13,11 +13,10 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
-using static ConsoleSystem;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.8")]
+    [Info("Custom Entities", "Nikedemos", "1.0.9")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -904,15 +903,15 @@ namespace Oxide.Plugins
 
             }
 
-            public static bool RegisterAndLoadBundle(CustomPrefabBundle bundle)
+            public static bool RegisterAndLoadBundle(CustomPrefabBundle bundle, string optionalSuffix = default(string))
             {
                 //step 0: ensure the data...
-                BinaryData binaryData = BinaryData.SummonBinaryData(bundle.Owner);
+                BinaryData binaryData = BinaryData.SummonBinaryData(bundle.Owner, optionalSuffix);
 
                 binaryData.PrefabBundle = bundle;
 
-                List<CustomPrefabRecipe> customRecipes = Pool.GetList<CustomPrefabRecipe>();
-                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.GetList<ModifiedPrefabRecipe>();
+                List<CustomPrefabRecipe> customRecipes = Pool.Get<List<CustomPrefabRecipe>>();
+                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.Get<List<ModifiedPrefabRecipe>>();
 
                 //step 1: separate the grain from the hull
 
@@ -969,8 +968,8 @@ namespace Oxide.Plugins
                     }
                 }
 
-                Pool.FreeList(ref customRecipes);
-                Pool.FreeList(ref modifiedRecipes);
+                Pool.FreeUnmanaged(ref customRecipes);
+                Pool.FreeUnmanaged(ref modifiedRecipes);
 
 
                 //step 4: now that everything is registered, load.
@@ -981,18 +980,18 @@ namespace Oxide.Plugins
                 return allGood;
             }
 
-            public static bool SaveAndUnregisterBundle(CustomPrefabBundle cookbook)
+            public static bool SaveAndUnregisterBundle(CustomPrefabBundle cookbook, string optionalSuffix = default(string))
             {
                 //and this should be the exact opposite.
                 //first, save...
 
                 //this will ensure the data wrapper, just in case it wasn't before
-                BinaryData binaryData = BinaryData.SummonBinaryData(cookbook.Owner);
+                BinaryData binaryData = BinaryData.SummonBinaryData(cookbook.Owner, optionalSuffix);
 
                 binaryData.Save(); //this will save everything
 
-                List<CustomPrefabRecipe> customRecipes = Pool.GetList<CustomPrefabRecipe>();
-                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.GetList<ModifiedPrefabRecipe>();
+                List<CustomPrefabRecipe> customRecipes = Pool.Get<List<CustomPrefabRecipe>>();
+                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.Get<List<ModifiedPrefabRecipe>>();
 
 
                 for (int i = 0; i < binaryData.PrefabBundle.Recipes.Length; i++)
@@ -1034,8 +1033,8 @@ namespace Oxide.Plugins
 
                 }
 
-                Pool.FreeList(ref customRecipes);
-                Pool.FreeList(ref modifiedRecipes);
+                Pool.FreeUnmanaged(ref customRecipes);
+                Pool.FreeUnmanaged(ref modifiedRecipes);
 
                 //and now we need to kill off vanilla entities that might still linger about
 
@@ -1654,7 +1653,7 @@ namespace Oxide.Plugins
 
             }
 
-            public static BinaryData SummonBinaryData(Plugin maybeOwnerPlugin)
+            public static BinaryData SummonBinaryData(Plugin maybeOwnerPlugin, string optionalSuffix)
             {
                 BinaryData resultData;
 
@@ -1662,7 +1661,7 @@ namespace Oxide.Plugins
                 {
                     //we need to summon it and add to cache by path
 
-                    resultData = new BinaryData(maybeOwnerPlugin);
+                    resultData = new BinaryData(maybeOwnerPlugin, optionalSuffix);
 
                     _cacheByOwner.Add(maybeOwnerPlugin, resultData);
                 }
@@ -1682,13 +1681,30 @@ namespace Oxide.Plugins
                 _cacheByOwner.Remove(maybeOwnerPlugin);
             }
 
-            public BinaryData(Plugin ownerPlugin)
+            public BinaryData(Plugin ownerPlugin, string optionalSuffix)
             {
                 _ownerPlugin = ownerPlugin;
 
+                if (optionalSuffix == default(string))
+                {
+                    optionalSuffix = string.Empty;
+                }
+
                 _fullFileDirectory = Path.Combine(Interface.Oxide.DataFileSystem.Directory, Instance.Name);
 
-                _fullFilePath = Path.Combine(_fullFileDirectory, $"{ownerPlugin.Name}.sav");
+                var filenameWithOrWithoutSuffixBuilder = new StringBuilder();
+
+                filenameWithOrWithoutSuffixBuilder.Append(ownerPlugin.Name);
+
+                if (optionalSuffix != string.Empty)
+                {
+                    filenameWithOrWithoutSuffixBuilder.Append('.');
+                    filenameWithOrWithoutSuffixBuilder.Append(optionalSuffix);
+                }
+
+                filenameWithOrWithoutSuffixBuilder.Append(".sav");
+
+                _fullFilePath = Path.Combine(_fullFileDirectory, filenameWithOrWithoutSuffixBuilder.ToString());
 
                 CustomEntitySaveList = new List<BaseEntity>();
 
@@ -1768,7 +1784,7 @@ namespace Oxide.Plugins
                     //for now, just test if things were not broken by refactoring.
                     //ok, they work fine, seemingly
 
-                    List<int> indicesToRemove = Pool.GetList<int>();
+                    List<int> indicesToRemove = Pool.Get<List<int>>();
 
                     using (FileStream fileStream = new FileStream(_fullFilePath, FileMode.Create))
                     {
@@ -1900,7 +1916,7 @@ namespace Oxide.Plugins
 
                     int countInvalid = indicesToRemove.Count;
 
-                    Pool.FreeList(ref indicesToRemove);
+                    Pool.FreeUnmanaged(ref indicesToRemove);
 
                     Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
 
