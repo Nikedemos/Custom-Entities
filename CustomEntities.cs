@@ -13,11 +13,10 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
-using static ConsoleSystem;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.7")]
+    [Info("Custom Entities", "Nikedemos", "1.0.9")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -429,7 +428,7 @@ namespace Oxide.Plugins
 
             public static Dictionary<string, List<BaseEntity>> ModifiedPrefabFullNameToCustomSaveList = null;
 
-            internal static void Init()
+            public static void Init()
             {
                 _emptyImpactGameObjectRef = new GameObjectRef();
                 _prefabsPreProcessedCustom = new Dictionary<string, GameObject>();
@@ -448,7 +447,7 @@ namespace Oxide.Plugins
                 ModifiedPrefabFullNameToCustomSaveList = new Dictionary<string, List<BaseEntity>>();
             }
 
-            internal static void Unload()
+            public static void Unload()
             {
                 _emptyImpactGameObjectRef = null;
                 _prefabsPreProcessedCustom = null;
@@ -904,15 +903,15 @@ namespace Oxide.Plugins
 
             }
 
-            public static bool RegisterAndLoadBundle(CustomPrefabBundle bundle)
+            public static bool RegisterAndLoadBundle(CustomPrefabBundle bundle, string optionalSuffix = default(string))
             {
                 //step 0: ensure the data...
-                BinaryData binaryData = BinaryData.SummonBinaryData(bundle.Owner);
+                BinaryData binaryData = BinaryData.SummonBinaryData(bundle.Owner, optionalSuffix);
 
                 binaryData.PrefabBundle = bundle;
 
-                List<CustomPrefabRecipe> customRecipes = Pool.GetList<CustomPrefabRecipe>();
-                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.GetList<ModifiedPrefabRecipe>();
+                List<CustomPrefabRecipe> customRecipes = Pool.Get<List<CustomPrefabRecipe>>();
+                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.Get<List<ModifiedPrefabRecipe>>();
 
                 //step 1: separate the grain from the hull
 
@@ -969,8 +968,8 @@ namespace Oxide.Plugins
                     }
                 }
 
-                Pool.FreeList(ref customRecipes);
-                Pool.FreeList(ref modifiedRecipes);
+                Pool.FreeUnmanaged(ref customRecipes);
+                Pool.FreeUnmanaged(ref modifiedRecipes);
 
 
                 //step 4: now that everything is registered, load.
@@ -981,18 +980,18 @@ namespace Oxide.Plugins
                 return allGood;
             }
 
-            public static bool SaveAndUnregisterBundle(CustomPrefabBundle cookbook)
+            public static bool SaveAndUnregisterBundle(CustomPrefabBundle cookbook, string optionalSuffix = default(string))
             {
                 //and this should be the exact opposite.
                 //first, save...
 
                 //this will ensure the data wrapper, just in case it wasn't before
-                BinaryData binaryData = BinaryData.SummonBinaryData(cookbook.Owner);
+                BinaryData binaryData = BinaryData.SummonBinaryData(cookbook.Owner, optionalSuffix);
 
                 binaryData.Save(); //this will save everything
 
-                List<CustomPrefabRecipe> customRecipes = Pool.GetList<CustomPrefabRecipe>();
-                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.GetList<ModifiedPrefabRecipe>();
+                List<CustomPrefabRecipe> customRecipes = Pool.Get<List<CustomPrefabRecipe>>();
+                List<ModifiedPrefabRecipe> modifiedRecipes = Pool.Get<List<ModifiedPrefabRecipe>>();
 
 
                 for (int i = 0; i < binaryData.PrefabBundle.Recipes.Length; i++)
@@ -1034,8 +1033,8 @@ namespace Oxide.Plugins
 
                 }
 
-                Pool.FreeList(ref customRecipes);
-                Pool.FreeList(ref modifiedRecipes);
+                Pool.FreeUnmanaged(ref customRecipes);
+                Pool.FreeUnmanaged(ref modifiedRecipes);
 
                 //and now we need to kill off vanilla entities that might still linger about
 
@@ -1466,23 +1465,23 @@ namespace Oxide.Plugins
 
             public List<BaseEntity> CustomEntitySaveList;
 
-            internal CustomPrefabBundle PrefabBundle = null;
+            public CustomPrefabBundle PrefabBundle = null;
 
-            internal static void Init()
+            public static void Init()
             {
                 _cacheByOwner = new Dictionary<Plugin, BinaryData>();
                 _prefabNamesToKill = new ListHashSet<string>();
                 _pluginPrefabCount = new Dictionary<string, (int, bool)>();
             }
 
-            internal static void Unload()
+            public static void Unload()
             {
                 _cacheByOwner = null;
                 _prefabNamesToKill = null;
                 _pluginPrefabCount = null;
             }
 
-            internal static void SaveAll()
+            public static void SaveAll()
             {
                 if (_cacheByOwner.IsNullOrEmpty())
                 {
@@ -1497,7 +1496,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal static void PlayerRequestedPluginCount(IPlayer iplayer, string partialPluginNameLowercase)
+            public static void PlayerRequestedPluginCount(IPlayer iplayer, string partialPluginNameLowercase)
             {
                 BinaryData findMatchingEntry = null;
 
@@ -1580,7 +1579,7 @@ namespace Oxide.Plugins
                 iplayer.Reply(builder.ToString());
             }
 
-            internal static void PlayerRequestedPluginPurge(IPlayer iplayer, string partialPluginNameLowercase)
+            public static void PlayerRequestedPluginPurge(IPlayer iplayer, string partialPluginNameLowercase)
             {
                 if (_cacheByOwner.Count == 0)
                 {
@@ -1654,7 +1653,7 @@ namespace Oxide.Plugins
 
             }
 
-            internal static BinaryData SummonBinaryData(Plugin maybeOwnerPlugin)
+            public static BinaryData SummonBinaryData(Plugin maybeOwnerPlugin, string optionalSuffix)
             {
                 BinaryData resultData;
 
@@ -1662,7 +1661,7 @@ namespace Oxide.Plugins
                 {
                     //we need to summon it and add to cache by path
 
-                    resultData = new BinaryData(maybeOwnerPlugin);
+                    resultData = new BinaryData(maybeOwnerPlugin, optionalSuffix);
 
                     _cacheByOwner.Add(maybeOwnerPlugin, resultData);
                 }
@@ -1670,7 +1669,7 @@ namespace Oxide.Plugins
                 return resultData;
             }
 
-            internal static void ForgetBinaryData(Plugin maybeOwnerPlugin)
+            public static void ForgetBinaryData(Plugin maybeOwnerPlugin)
             {
                 if (!_cacheByOwner.TryGetValue(maybeOwnerPlugin, out BinaryData data))
                 {
@@ -1682,13 +1681,30 @@ namespace Oxide.Plugins
                 _cacheByOwner.Remove(maybeOwnerPlugin);
             }
 
-            internal BinaryData(Plugin ownerPlugin)
+            public BinaryData(Plugin ownerPlugin, string optionalSuffix)
             {
                 _ownerPlugin = ownerPlugin;
 
+                if (optionalSuffix == default(string))
+                {
+                    optionalSuffix = string.Empty;
+                }
+
                 _fullFileDirectory = Path.Combine(Interface.Oxide.DataFileSystem.Directory, Instance.Name);
 
-                _fullFilePath = Path.Combine(_fullFileDirectory, $"{ownerPlugin.Name}.sav");
+                var filenameWithOrWithoutSuffixBuilder = new StringBuilder();
+
+                filenameWithOrWithoutSuffixBuilder.Append(ownerPlugin.Name);
+
+                if (optionalSuffix != string.Empty)
+                {
+                    filenameWithOrWithoutSuffixBuilder.Append('.');
+                    filenameWithOrWithoutSuffixBuilder.Append(optionalSuffix);
+                }
+
+                filenameWithOrWithoutSuffixBuilder.Append(".sav");
+
+                _fullFilePath = Path.Combine(_fullFileDirectory, filenameWithOrWithoutSuffixBuilder.ToString());
 
                 CustomEntitySaveList = new List<BaseEntity>();
 
@@ -1705,7 +1721,7 @@ namespace Oxide.Plugins
                 Directory.CreateDirectory(_fullFileDirectory);
             }
 
-            internal void ShiftSaveBackups()
+            public void ShiftSaveBackups()
             {
                 if (!File.Exists(_fullFilePath))
                 {
@@ -1746,7 +1762,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal void Save()
+            public void Save()
             {
                 int countAll = CustomEntitySaveList.Count;
 
@@ -1768,7 +1784,7 @@ namespace Oxide.Plugins
                     //for now, just test if things were not broken by refactoring.
                     //ok, they work fine, seemingly
 
-                    List<int> indicesToRemove = Pool.GetList<int>();
+                    List<int> indicesToRemove = Pool.Get<List<int>>();
 
                     using (FileStream fileStream = new FileStream(_fullFilePath, FileMode.Create))
                     {
@@ -1900,7 +1916,7 @@ namespace Oxide.Plugins
 
                     int countInvalid = indicesToRemove.Count;
 
-                    Pool.FreeList(ref indicesToRemove);
+                    Pool.FreeUnmanaged(ref indicesToRemove);
 
                     Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
 
@@ -1913,7 +1929,7 @@ namespace Oxide.Plugins
 
             }
 
-            internal void Load()
+            public void Load()
             {
                 EnsureFileDirectory();
 
@@ -2504,7 +2520,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal void OnParentChanging(BaseEntity oldParent, BaseEntity newParent)
+            public void OnParentChanging(BaseEntity oldParent, BaseEntity newParent)
             {
                 //TODO:
                 //the purpose of this method is that when a custom entity switches parents,
@@ -2562,7 +2578,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal CustomHandler(BaseEntity ownerEntity, string defaultClientsidePrefabName, BaseEntity prototypeEntity)
+            public CustomHandler(BaseEntity ownerEntity, string defaultClientsidePrefabName, BaseEntity prototypeEntity)
             {
                 _ownerEntity = ownerEntity;
 
@@ -2585,7 +2601,7 @@ namespace Oxide.Plugins
                 _ownerEntityAsInterface.SaveListInDataFile = useThisList;
             }
 
-            internal void PreServerLoad()
+            public void PreServerLoad()
             {
                 if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
@@ -2596,7 +2612,7 @@ namespace Oxide.Plugins
                 
             }
 
-            internal void ServerInit()
+            public void ServerInit()
             {
                 EnableSavingToDisk = _ownerEntityAsInterface.EnableSavingToDiskByDefault; //
 
@@ -2615,7 +2631,7 @@ namespace Oxide.Plugins
 
             }
 
-            internal void Save(BaseNetworkable.SaveInfo info)
+            public void Save(BaseNetworkable.SaveInfo info)
             {
                 if (info.forDisk)
                 {
@@ -2643,7 +2659,7 @@ namespace Oxide.Plugins
                 _ownerEntityAsInterface.OnEntitySaveForNetwork(info);
             }
 
-            internal void Load(BaseNetworkable.LoadInfo info)
+            public void Load(BaseNetworkable.LoadInfo info)
             {
                 if (!_ownerEntityAsInterface.HasDefaultInventory || _ownerEntityAsInterface.DefaultInventoryHandledByBaseType)
                 {
@@ -2664,14 +2680,14 @@ namespace Oxide.Plugins
                 }
             }
 
-            internal void SaveExtra(Stream stream, BinaryWriter writer)
+            public void SaveExtra(Stream stream, BinaryWriter writer)
             {
                 writer.Write(_clientsidePrefabID);
 
                 _ownerEntityAsInterface.SaveExtra(stream, writer);
             }
 
-            internal void LoadExtra(Stream stream, BinaryReader reader)
+            public void LoadExtra(Stream stream, BinaryReader reader)
             {
                 ClientsidePrefabID = reader.ReadUInt32();
 
@@ -2686,7 +2702,7 @@ namespace Oxide.Plugins
             }
 
 
-            internal void DestroyShared()
+            public void DestroyShared()
             {
                 //I think this is th eonly part that doesn't care whether vanilla handles it or not!
                 //Annihilation is important. We need to get rid of all those nasty entities.
