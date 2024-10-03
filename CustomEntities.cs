@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.9")]
+    [Info("Custom Entities", "Nikedemos", "1.0.10")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -3112,11 +3112,11 @@ namespace Oxide.Plugins
             {
                 get
                 {
-                    return inventory;
+                    return _inventory;
                 }
                 set
                 {
-                    inventory = value;
+                    _inventory = value;
                 }
             }
 
