@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.10")]
+    [Info("Custom Entities", "Nikedemos", "1.0.11")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -1785,6 +1785,7 @@ namespace Oxide.Plugins
                     //ok, they work fine, seemingly
 
                     List<int> indicesToRemove = Pool.Get<List<int>>();
+                    List<int> indicesToDestroy = Pool.Get<List<int>>();
 
                     using (FileStream fileStream = new FileStream(_fullFilePath, FileMode.Create))
                     {
@@ -1810,12 +1811,14 @@ namespace Oxide.Plugins
                                         if (entity.net == null)
                                         {
                                             indicesToRemove.Add(i);
+                                            indicesToDestroy.Add(i);
                                             continue;
                                         }
 
                                         if (entity.IsDestroyed)
                                         {
                                             indicesToRemove.Add(i);
+                                            indicesToDestroy.Add(i);
                                             continue;
                                         }
 
@@ -1901,13 +1904,23 @@ namespace Oxide.Plugins
                         }
                     }
 
+                    if (indicesToDestroy.Count > 0)
+                    {
+                        for (int i = 0; i < indicesToDestroy.Count; i++)
+                        {
+                            var idx = indicesToDestroy[i];
+                            var toDestroy = CustomEntitySaveList[idx];
+                            GameObject.Destroy(toDestroy.gameObject);
+                        }
+                    }
+
                     if (indicesToRemove.Count > 0)
                     {
                         indicesToRemove.Sort((a, b) => b.CompareTo(a));
 
                         foreach (int index in indicesToRemove)
                         {
-                            if (!(index >= 0 && index < countAll))
+                            if (index >= 0 && index < countAll)
                             {
                                 CustomEntitySaveList.RemoveAt(index);
                             }
@@ -1917,6 +1930,7 @@ namespace Oxide.Plugins
                     int countInvalid = indicesToRemove.Count;
 
                     Pool.FreeUnmanaged(ref indicesToRemove);
+                    Pool.FreeUnmanaged(ref indicesToDestroy);
 
                     Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
 
