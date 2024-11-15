@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.11")]
+    [Info("Custom Entities", "Nikedemos", "1.0.12")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -298,6 +298,8 @@ namespace Oxide.Plugins
         void OnServerInitialized()
         {
             Instance = this;
+            LoadConfig();
+
             ReusableEffect = new Effect();
 
             permission.RegisterPermission(PERM_ADMIN, this);
@@ -1060,7 +1062,10 @@ namespace Oxide.Plugins
 
                 if (countKilled > 0)
                 {
-                    Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA, null, countKilled));
+                    if (Instance.configuration.VerboseLogging)
+                    {
+                        Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA, null, countKilled));
+                    }
                 }
 
 
@@ -1303,7 +1308,10 @@ namespace Oxide.Plugins
 
                 if (countKilled > 0)
                 {
-                    Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM, null, countKilled, recipeFullPrefabName));
+                    if (Instance.configuration.VerboseLogging)
+                    {
+                        Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM, null, countKilled, recipeFullPrefabName));
+                    }
                 }
 
                 return true;
@@ -1932,9 +1940,10 @@ namespace Oxide.Plugins
                     Pool.FreeUnmanaged(ref indicesToRemove);
                     Pool.FreeUnmanaged(ref indicesToDestroy);
 
-                    Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
-
-
+                    if (Instance.configuration.VerboseLogging)
+                    {
+                        Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
+                    }
                 }
                 catch (Exception e)
                 {
@@ -3801,6 +3810,49 @@ namespace Oxide.Plugins
             }
 
         }
+        #endregion
+
+
+        #region Config
+
+        private Configuration configuration;
+
+        public class Configuration
+        {
+            public bool VerboseLogging { get; set; } = true;
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+
+            try
+            {
+                configuration = Config.ReadObject<Configuration>();
+                if (configuration == null)
+                {
+                    throw new Exception();
+                }
+
+                SaveConfig();
+            }
+            catch (Exception ex)
+            {
+                Config.WriteObject(configuration, false, $"{Interface.Oxide.ConfigDirectory}/{Name}.jsonError");
+                PrintError($"The configuration file contains an error. {ex}");
+            }
+        }
+
+        protected override void LoadDefaultConfig()
+        {
+            configuration = new Configuration();
+        }
+
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configuration);
+        }
+
         #endregion
     }
 }
