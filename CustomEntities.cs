@@ -2763,7 +2763,7 @@ namespace Oxide.Plugins
                     entityOwner = owner,
                     allowedContents = ItemContainer.ContentsType.Generic
                 };
-                newInventory.SetOnlyAllowedItems(null);
+                newInventory.SetOnlyAllowedItem(null);
                 newInventory.maxStackSize = 0;
                 newInventory.ServerInitialize(null, capacity);
 
