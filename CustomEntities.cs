@@ -1,4 +1,5 @@
 ﻿using Facepunch;
+using Facepunch.Extend;
 using Network;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
@@ -16,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.10")]
+    [Info("Custom Entities", "Nikedemos", "1.0.13")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -46,7 +47,10 @@ namespace Oxide.Plugins
         public const string CMD_PURGE_PLUGIN = "purge_plugin";
         public const string CMD_COUNT_PLUGIN = "count_plugin";
 
-        public const string PERM_ADMIN = "customentities.admin"; //required for the commands above
+        public const string PREFIX_CUSTOMENTITIES = "customentities";
+        public const string PERM_ADMIN = PREFIX_CUSTOMENTITIES + ".admin"; //required for the commands above
+
+        public const string CONVAR_VERBOSE_LOGGING = "verbose_logging";
 
         #endregion
 
@@ -298,6 +302,7 @@ namespace Oxide.Plugins
         void OnServerInitialized()
         {
             Instance = this;
+
             ReusableEffect = new Effect();
 
             permission.RegisterPermission(PERM_ADMIN, this);
@@ -306,6 +311,8 @@ namespace Oxide.Plugins
             AddCovalenceCommand(CMD_PURGE_PLUGIN, nameof(CommandPurgePlugin), PERM_ADMIN);
             AddCovalenceCommand(CMD_SPAWN_AT, nameof(CommandSpawnAtPlayerEyes), PERM_ADMIN);
             AddCovalenceCommand(CMD_COUNT_PLUGIN, nameof(CommandCountPlugin), PERM_ADMIN);
+
+            CustomConvars.Init();
 
             BinaryData.Init();
 
@@ -327,6 +334,8 @@ namespace Oxide.Plugins
             CustomPrefabs.Unload();
             BinaryData.Unload(); //doesn't do much either.
             CastingNonAlloc.Unload();
+
+            CustomConvars.Unload();
 
             //unload top-level static
             Unloading = false;
@@ -1060,7 +1069,10 @@ namespace Oxide.Plugins
 
                 if (countKilled > 0)
                 {
-                    Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA, null, countKilled));
+                    if (CustomConvars.VerboseLogging)
+                    {
+                        Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_VANILLA, null, countKilled));
+                    }
                 }
 
 
@@ -1115,11 +1127,11 @@ namespace Oxide.Plugins
 
                 if (recipe.SaveHandling == ModifiedSaveHandling.SaveInVanillaSaveList)
                 {
-                    newEntity.enableSaving = true;
+                    newEntity.EnableSaving(true);
                 }
                 else
                 {
-                    newEntity.enableSaving = false;
+                    newEntity.EnableSaving(false);
 
                     //naughty reflection
                     NaughtyReplaceEntityFullPrefabName(newEntity, recipe.FullPrefabName);
@@ -1303,7 +1315,10 @@ namespace Oxide.Plugins
 
                 if (countKilled > 0)
                 {
-                    Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM, null, countKilled, recipeFullPrefabName));
+                    if (CustomConvars.VerboseLogging)
+                    {
+                        Instance.PrintWarning(MSG(MSG_BUNDLE_UNREGISTRATION_REMOVED_CUSTOM, null, countKilled, recipeFullPrefabName));
+                    }
                 }
 
                 return true;
@@ -1785,6 +1800,7 @@ namespace Oxide.Plugins
                     //ok, they work fine, seemingly
 
                     List<int> indicesToRemove = Pool.Get<List<int>>();
+                    List<int> indicesToDestroy = Pool.Get<List<int>>();
 
                     using (FileStream fileStream = new FileStream(_fullFilePath, FileMode.Create))
                     {
@@ -1810,12 +1826,14 @@ namespace Oxide.Plugins
                                         if (entity.net == null)
                                         {
                                             indicesToRemove.Add(i);
+                                            indicesToDestroy.Add(i);
                                             continue;
                                         }
 
                                         if (entity.IsDestroyed)
                                         {
                                             indicesToRemove.Add(i);
+                                            indicesToDestroy.Add(i);
                                             continue;
                                         }
 
@@ -1901,13 +1919,23 @@ namespace Oxide.Plugins
                         }
                     }
 
+                    if (indicesToDestroy.Count > 0)
+                    {
+                        for (int i = 0; i < indicesToDestroy.Count; i++)
+                        {
+                            var idx = indicesToDestroy[i];
+                            var toDestroy = CustomEntitySaveList[idx];
+                            GameObject.Destroy(toDestroy.gameObject);
+                        }
+                    }
+
                     if (indicesToRemove.Count > 0)
                     {
                         indicesToRemove.Sort((a, b) => b.CompareTo(a));
 
                         foreach (int index in indicesToRemove)
                         {
-                            if (!(index >= 0 && index < countAll))
+                            if (index >= 0 && index < countAll)
                             {
                                 CustomEntitySaveList.RemoveAt(index);
                             }
@@ -1917,10 +1945,12 @@ namespace Oxide.Plugins
                     int countInvalid = indicesToRemove.Count;
 
                     Pool.FreeUnmanaged(ref indicesToRemove);
+                    Pool.FreeUnmanaged(ref indicesToDestroy);
 
-                    Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
-
-
+                    if (CustomConvars.VerboseLogging)
+                    {
+                        Instance.PrintWarning(MSG(MSG_SAVED_ENTITIES_1, null, countSaved, countAll, countCustom, countVanilla, countInvalid, _fullFilePath));
+                    }
                 }
                 catch (Exception e)
                 {
@@ -2582,7 +2612,7 @@ namespace Oxide.Plugins
             {
                 _ownerEntity = ownerEntity;
 
-                _ownerEntity.enableSaving = false; //disable vanilla saving, always
+                _ownerEntity.EnableSaving(false); //disable vanilla saving, always
 
                 _ownerEntityAsInterface = (ICustomEntity)ownerEntity;
 
@@ -2733,7 +2763,7 @@ namespace Oxide.Plugins
                     entityOwner = owner,
                     allowedContents = ItemContainer.ContentsType.Generic
                 };
-                newInventory.SetOnlyAllowedItems(null, null);
+                newInventory.SetOnlyAllowedItems(null);
                 newInventory.maxStackSize = 0;
                 newInventory.ServerInitialize(null, capacity);
 
@@ -3736,7 +3766,7 @@ namespace Oxide.Plugins
 
         public static void PlayEffect(string effect, Vector3 position, Vector3 forward, BasePlayer player = null)
         {
-            ReusableEffect.Clear();
+            ReusableEffect.Clear(true);
             ReusableEffect.Init(Effect.Type.Generic, position, Vector3.up);
             ReusableEffect.pooledString = effect;
             if (player != null)
@@ -3818,6 +3848,203 @@ namespace Oxide.Plugins
             }
 
         }
+        #endregion
+
+
+        #region CUSTOM CONVARS
+
+        public static class CustomConvars
+        {
+            public static ListHashSet<ConsoleSystem.Command> ConvarsToRegister;
+            public static bool ShouldSave = true;
+
+            public static bool VerboseLogging = true;
+            public static string GetConfigFilePath => ConVar.Server.GetServerFolder("cfg") + "/customentities.cfg";
+
+            public static void SaveToConfigStringFileIfShouldSave()
+            {
+                if (!ShouldSave)
+                {
+                    return;
+                }
+
+                StringBuilder textBuilder = new StringBuilder();
+
+                foreach (var item in ConvarsToRegister)
+                {
+                    textBuilder.Append(item.FullName);
+                    textBuilder.Append(' ');
+                    textBuilder.Append(item.String.QuoteSafe());
+                    textBuilder.Append(Environment.NewLine);
+                }
+
+                File.WriteAllText(GetConfigFilePath, textBuilder.ToString());
+            }
+
+            public static ListHashSet<ConsoleSystem.Command> GetConvarsToRegister()
+            {
+                return new ListHashSet<ConsoleSystem.Command>
+                {
+                    new ConsoleSystem.Command
+                    {
+                        Name = CONVAR_VERBOSE_LOGGING,
+                        Parent = PREFIX_CUSTOMENTITIES,
+                        FullName = PREFIX_CUSTOMENTITIES + "." + CONVAR_VERBOSE_LOGGING,
+                        ServerAdmin = true,
+                        Saved = false,
+                        Variable = true,
+                        GetOveride = () => VerboseLogging.ToString(),
+                        SetOveride = delegate(string str)
+                        {
+                            VerboseLogging = str.ToBool();
+                            SaveToConfigStringFileIfShouldSave();
+                        }
+                    },
+                };
+            }
+
+            public static void Init()
+            {
+
+                ConvarsToRegister = GetConvarsToRegister();
+
+                var consoleCommandsServer = ConsoleSystem.Index.Server.Dict;
+
+                var consoleCommandsAll = ConsoleSystem.Index.All;
+
+                foreach (var convar in ConvarsToRegister)
+                {
+                    //add to server dict stuff
+                    consoleCommandsServer[convar.FullName] = convar;
+                }
+
+                //this registers all
+                ConsoleSystem.Index.All = consoleCommandsAll.Concat(ConvarsToRegister).ToArray();
+
+                //and now restore from config file, if an entry exists
+
+                var configFilePath = GetConfigFilePath;
+
+                ShouldSave = true;
+
+                if (!File.Exists(configFilePath))
+                {
+                    SaveToConfigStringFileIfShouldSave();
+                    return;
+                }
+
+                var configString = File.ReadAllText(configFilePath);
+
+                string[] allOptions = configString.Split(new char[1]
+                {
+                    '\n'
+                }, StringSplitOptions.RemoveEmptyEntries);
+
+
+                int foundUseful = 0;
+                int foundUseless = 0;
+
+                //when we're running, we dont wanna save, since we're only reading here
+                ShouldSave = false;
+
+                for (int i = 0; i < allOptions.Length; i++)
+                {
+                    string optionText = allOptions[i].Trim();
+
+                    //ignore empties and comments
+                    if (string.IsNullOrWhiteSpace(optionText) || optionText[0] == '#')
+                    {
+                        goto FoundUseless;
+                    }
+
+                    var split = optionText.Split(' ');
+
+                    if (split.Length < 2)
+                    {
+                        goto FoundUseless;
+                    }
+
+                    var fullName = split[0];
+
+                    //ignore stuff outside of the scope
+
+                    if (!ExistsInConvarsToRegister(fullName))
+                    {
+                        goto FoundUseless;
+                    }
+
+                    ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), optionText);
+                    foundUseful++;
+                    continue;
+
+                    FoundUseless:
+                    foundUseless++;
+                }
+
+                ShouldSave = true;
+
+                if (foundUseful == 0 || foundUseless > 0)
+                {
+                    //re-save
+                    SaveToConfigStringFileIfShouldSave();
+                }
+
+                ConsoleSystem.HasChanges = false;
+
+            }
+
+            public static bool ExistsInConvarsToRegister(string fullName)
+            {
+                bool found = false;
+
+                foreach (var c in ConvarsToRegister)
+                {
+                    if (c.FullName == fullName)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                return found;
+            }
+
+            public static void Unload()
+            {
+                var consoleCommandsAllList = ConsoleSystem.Index.All.ToList();
+                var consoleCommandsServer = ConsoleSystem.Index.Server.Dict;
+
+                foreach (var convar in ConvarsToRegister)
+                {
+                    //remove from server dict stuff
+                    var fullName = convar.FullName;
+                    consoleCommandsServer.Remove(fullName);
+                }
+
+                //this unregisters all
+
+                for (var i = consoleCommandsAllList.Count - 1; i >= 0; i--)
+                {
+                    var convar = consoleCommandsAllList[i];
+                    var fullName = convar.FullName;
+
+                    if (!ExistsInConvarsToRegister(fullName))
+                    {
+                        continue;
+                    }
+
+                    //found, so remove. it's safe to do so cause we're iterating backwards
+                    consoleCommandsAllList.RemoveAt(i);
+                }
+
+                ConsoleSystem.Index.All = consoleCommandsAllList.ToArray();
+
+                ConvarsToRegister = null;
+            }
+        }
+
+
+
         #endregion
     }
 }
