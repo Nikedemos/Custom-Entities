@@ -1147,7 +1147,7 @@ namespace Oxide.Plugins
 
                     if (recipe.SaveHandling == ModifiedSaveHandling.SaveInBundleSaveList)
                     {
-                        ModifiedPrefabFullNameToCustomSaveList.Add(recipe.FullPrefabName, data.CustomEntitySaveList);
+                        ModifiedPrefabFullNameToCustomSaveList[recipe.FullPrefabName] = data.CustomEntitySaveList;
                         newCompo.AddToCustomSaveList = true;
                     }
 
