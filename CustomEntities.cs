@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.13")]
+    [Info("Custom Entities", "Nikedemos", "1.0.14")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
