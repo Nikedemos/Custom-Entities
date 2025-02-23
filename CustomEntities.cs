@@ -1147,7 +1147,7 @@ namespace Oxide.Plugins
 
                     if (recipe.SaveHandling == ModifiedSaveHandling.SaveInBundleSaveList)
                     {
-                        ModifiedPrefabFullNameToCustomSaveList.Add(recipe.FullPrefabName, data.CustomEntitySaveList);
+                        ModifiedPrefabFullNameToCustomSaveList[recipe.FullPrefabName] = data.CustomEntitySaveList;
                         newCompo.AddToCustomSaveList = true;
                     }
 
@@ -1379,9 +1379,9 @@ namespace Oxide.Plugins
 
             private static void AddToGameManifest(string fullPrefabName, GameObject newGo, bool alsoAddToCurrentEntities)
             {
-                GameManifest.pathToGuid.Add(fullPrefabName, fullPrefabName);
-                GameManifest.guidToPath.Add(fullPrefabName, fullPrefabName);
-                GameManifest.guidToObject.Add(fullPrefabName, newGo);
+                GameManifest.pathToGuid[fullPrefabName] = fullPrefabName;
+                GameManifest.guidToPath[fullPrefabName] = fullPrefabName;
+                GameManifest.guidToObject[fullPrefabName] = newGo;
 
                 if (!alsoAddToCurrentEntities)
                 {
