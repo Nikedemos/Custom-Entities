@@ -3766,7 +3766,7 @@ namespace Oxide.Plugins
 
         public static void PlayEffect(string effect, Vector3 position, Vector3 forward, BasePlayer player = null)
         {
-            ReusableEffect.Clear(true);
+            ReusableEffect.Clear();
             ReusableEffect.Init(Effect.Type.Generic, position, Vector3.up);
             ReusableEffect.pooledString = effect;
             if (player != null)
