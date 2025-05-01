@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.14")]
+    [Info("Custom Entities", "Nikedemos", "1.0.15")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -417,9 +417,6 @@ namespace Oxide.Plugins
 
         public static class CustomPrefabs
         {
-            //naughty reflection
-            private static FieldInfo _entityPrefabNameFieldInfo = null;
-
             private static GameObjectRef _emptyImpactGameObjectRef = null;
             private static Dictionary<string, GameObject> _prefabsPreProcessedCustom = null;
 
@@ -443,9 +440,6 @@ namespace Oxide.Plugins
                 _prefabsPreProcessedCustom = new Dictionary<string, GameObject>();
                 _preProcessedGoToEntityCache = new Dictionary<GameObject, BaseEntity>();
 
-                //naughty reflection
-                _entityPrefabNameFieldInfo = typeof(BaseNetworkable).GetField("_prefabName", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
                 _gameManifestEntityList = new List<string>();
                 _cachedRecipes = new ListHashSet<GenericPrefabRecipe>();
                 _pluginToBinaryData = new Dictionary<Plugin, BinaryData>();
@@ -462,9 +456,6 @@ namespace Oxide.Plugins
                 _prefabsPreProcessedCustom = null;
                 _preProcessedGoToEntityCache = null;
 
-                //naughty reflection
-                _entityPrefabNameFieldInfo = null;
-
                 _gameManifestEntityList = null;
                 _cachedRecipes = null;
                 _pluginToBinaryData = null;
@@ -474,13 +465,6 @@ namespace Oxide.Plugins
                 ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles = null;
                 ModifiedPrefabFullNameToCustomSaveList = null;
             }
-
-            public static void NaughtyReplaceEntityFullPrefabName(BaseEntity entity, string fullPrefabName)
-            {
-                //naughty reflection
-                _entityPrefabNameFieldInfo.SetValue(entity, fullPrefabName);
-            }
-
 
             public static BaseEntity TryGetPreprocessedPrototypeFromVanilla(string prefabName) => TryGetPreprocessedPrototypeFrom(GameManager.server.preProcessed.prefabList, prefabName);
             public static BaseEntity TryGetPreprocessedPrototypeFromCustom(string prefabName) => TryGetPreprocessedPrototypeFrom(_prefabsPreProcessedCustom, prefabName);
@@ -625,9 +609,9 @@ namespace Oxide.Plugins
 
                     EnsureMovedToCustomSaveListRecursively(item, saveList);
                 }
-                
+
             }
-            
+
 
             private static void ForEachEntityInTransformHierarchyRecursivelyAndAlsoConsideringItemsInInventories(BaseEntity entity, Action<BaseEntity> entityAction, List<BaseEntity> saveList)
             {
@@ -707,7 +691,7 @@ namespace Oxide.Plugins
                                     if (inventories != null)
                                     {
                                         int invLength = inventories.Length;
-                                        for (var i = 0;  i < invLength; i++)
+                                        for (var i = 0; i < invLength; i++)
                                         {
                                             var inventory = inventories[i];
 
@@ -1134,7 +1118,7 @@ namespace Oxide.Plugins
                     newEntity.EnableSaving(false);
 
                     //naughty reflection
-                    NaughtyReplaceEntityFullPrefabName(newEntity, recipe.FullPrefabName);
+                    newEntity._prefabName = recipe.FullPrefabName;
 
                     ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.Add(recipe.FullPrefabName, modifiedPrefabStringPoolID);
 
@@ -1189,7 +1173,7 @@ namespace Oxide.Plugins
                 newEntity.prefabID = AddToStringPool(recipe.FullPrefabName);
 
                 //naughty reflection
-                NaughtyReplaceEntityFullPrefabName(newEntity, recipe.FullPrefabName);
+                newEntity._prefabName = recipe.FullPrefabName;
 
                 ICustomEntity asInterface = (newEntity as ICustomEntity);
 
@@ -2016,10 +2000,14 @@ namespace Oxide.Plugins
                                         while (true)
                                         {
                                             //first we read the z bytes...
-
+                                            ProtoBuf.Entity entData = null;
                                             int vanillaLength = reader.ReadInt32();
-
-                                            ProtoBuf.Entity entData = ProtoBuf.Entity.DeserializeLength(readStream, vanillaLength);
+                                            var bytes = reader.ReadBytes(vanillaLength);
+                                            using (var bufferStream = Pool.Get<BufferStream>())
+                                            {
+                                                bufferStream.Initialize(bytes, vanillaLength);
+                                                entData = ProtoBuf.Entity.DeserializeLength(bufferStream, vanillaLength);
+                                            }
 
                                             if (entData.baseNetworkable.uid.Value != 0 && (hashSet.Contains(entData.baseNetworkable.uid.Value) || BaseNetworkable.serverEntities.Contains(entData.baseNetworkable.uid)))
                                             {
@@ -2378,7 +2366,7 @@ namespace Oxide.Plugins
 
                 if (modifiedEntity.PrefabName != RecipeFullPrefabName)
                 {
-                    CustomPrefabs.NaughtyReplaceEntityFullPrefabName(modifiedEntity, RecipeFullPrefabName);
+                    modifiedEntity._prefabName = RecipeFullPrefabName;
                 }
             }
 
@@ -2414,7 +2402,7 @@ namespace Oxide.Plugins
 
                 CustomPrefabs.EnsureMovedToCustomSaveListRecursivelyTopDown(modifiedEntity, entitySaveList);
 
-                DestroyStuff:
+            DestroyStuff:
 
                 Destroy(this);
             }
@@ -2639,7 +2627,7 @@ namespace Oxide.Plugins
                 }
 
                 _ownerEntityAsInterface.DefaultInventory = CreateInventory(_ownerEntity, false, _ownerEntityAsInterface.DefaultInventoryCapacity);
-                
+
             }
 
             public void ServerInit()
@@ -2723,7 +2711,7 @@ namespace Oxide.Plugins
 
                 _ownerEntityAsInterface.LoadExtra(stream, reader);
             }
-            
+
             internal void PostLoadExtra(Stream stream, BinaryReader reader)
             {
                 ClientsidePrefabID = reader.ReadUInt32();
@@ -3766,7 +3754,6 @@ namespace Oxide.Plugins
 
         public static void PlayEffect(string effect, Vector3 position, Vector3 forward, BasePlayer player = null)
         {
-            ReusableEffect.Clear();
             ReusableEffect.Init(Effect.Type.Generic, position, Vector3.up);
             ReusableEffect.pooledString = effect;
             if (player != null)
@@ -3977,7 +3964,7 @@ namespace Oxide.Plugins
                     foundUseful++;
                     continue;
 
-                    FoundUseless:
+                FoundUseless:
                     foundUseless++;
                 }
 
