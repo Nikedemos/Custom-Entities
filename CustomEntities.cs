@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.15")]
+    [Info("Custom Entities", "Nikedemos", "1.0.16")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -981,7 +981,7 @@ namespace Oxide.Plugins
                 //this will ensure the data wrapper, just in case it wasn't before
                 BinaryData binaryData = BinaryData.SummonBinaryData(cookbook.Owner, optionalSuffix);
 
-                binaryData.Save(); //this will save everything
+                binaryData.Save(true); //this will save everything
 
                 List<CustomPrefabRecipe> customRecipes = Pool.Get<List<CustomPrefabRecipe>>();
                 List<ModifiedPrefabRecipe> modifiedRecipes = Pool.Get<List<ModifiedPrefabRecipe>>();
@@ -1480,7 +1480,7 @@ namespace Oxide.Plugins
                 _pluginPrefabCount = null;
             }
 
-            public static void SaveAll()
+            public static void SaveAll(bool forceInvalidateNetworkCache = false)
             {
                 if (_cacheByOwner.IsNullOrEmpty())
                 {
@@ -1491,7 +1491,7 @@ namespace Oxide.Plugins
 
                 foreach (KeyValuePair<Plugin, BinaryData> binaryData in _cacheByOwner)
                 {
-                    binaryData.Value.Save(); //do not kill here.
+                    binaryData.Value.Save(forceInvalidateNetworkCache); //do not kill here.
                 }
             }
 
@@ -1761,7 +1761,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            public void Save()
+            public void Save(bool forceInvalidateNetworkCache = false)
             {
                 int countAll = CustomEntitySaveList.Count;
 
@@ -1843,6 +1843,10 @@ namespace Oxide.Plugins
                                         if (swaparoo)
                                         {
                                             entity.prefabID = swaperooPrefabID;
+                                        }
+
+                                        if (forceInvalidateNetworkCache || swaparoo)
+                                        {
                                             entity.InvalidateNetworkCache();
                                         }
 
