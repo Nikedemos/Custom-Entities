@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.16")]
+    [Info("Custom Entities", "Nikedemos", "1.0.17")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -133,6 +133,9 @@ namespace Oxide.Plugins
         public const string MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO = nameof(MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO);
         public const string MSG_TRY_COMPO_REPLACE_DEBUG_HEADER = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_HEADER);
         public const string MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO);
+        public const string MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_THIS_COMPO = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_THIS_COMPO);
+        public const string MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_OTHER_COMPO = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_OTHER_COMPO);
+        public const string MSG_TRY_COMPO_REPLACE_DEBUG_SUBCOMPO_NOT_FOUND_IN_DESTINATION = nameof(MSG_TRY_COMPO_REPLACE_DEBUG_SUBCOMPO_NOT_FOUND_IN_DESTINATION);
 
         private static readonly Dictionary<string, string> LangMessages = new Dictionary<string, string>
         {
@@ -174,6 +177,9 @@ namespace Oxide.Plugins
             [MSG_TRY_COMPO_REPLACE_ERROR_ALREADY_HAS_NEW_COMPO] = "The GameObject already has a `{0}` component attached (and there's only one allowed!)",
             [MSG_TRY_COMPO_REPLACE_DEBUG_HEADER] = "`{0}` is a subclass of `{1}`, replacing matching fields:\n",
             [MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO] = "    set `{0}` to `{1}`",
+            [MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_THIS_COMPO] = "    FOUND SELF REFERENCE IN THE OLD COMPONENT in the field `{0}`. SETTING NEW COMPONENT'S SELF REFERENCE TO ITSELF.",
+            [MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_OTHER_COMPO] = "    FOUND REFERENCE TO THE OLD COMPONENT IN ANOTHER COMPONENT IN THE HIERARCHY ({0}) in the field `{1}`. SETTING THAT COMPONENT'S REFERENCE TO THE NEW COMPONENT.",
+            [MSG_TRY_COMPO_REPLACE_DEBUG_SUBCOMPO_NOT_FOUND_IN_DESTINATION] = "    COULD NOT MATCH THE SOURCE SUB-COMPONENT WITH THE DESTINATION COMPONENT ({0}) in the field `{1}`. THE DESTINATION COMPONENT DOESN'T EXIST. THIS IS BAD."
         };
 
         private static string MSG(string msg, string userID = null, params object[] args)
@@ -818,17 +824,20 @@ namespace Oxide.Plugins
                 //so keep passing a bool.
 
                 //
-
+                /*
                 if (!first)
                 {
                     if (vanillaEntity.enableSaving == false)
                     {
+                        Instance.PrintWarning($">>> DEBUG ENSURE MOVED: NOT MOVING `{vanillaEntity.PrefabName}` TO SAVE LIST, BECAUSE IT'S ENABLE SAVING IS FALSE!");
                         return;
                     }
-                }
+                }*/
 
                 first = false;
                 EnsureMovedToCustomSaveList(vanillaEntity, targetList);
+
+                vanillaEntity.enableSaving = false;
             }
 
             public static void EnsureMovedToCustomSaveList(BaseEntity vanillaEntity, List<BaseEntity> targetList)
@@ -852,8 +861,18 @@ namespace Oxide.Plugins
 
                 if (asInterface != null)
                 {
-                    //this is already a custom entity, rest assured it's handled by a custom save file already
-                    return;
+                    //check if it's something handled by bundles
+                    var tryGetList = ModifiedPrefabFullNameToCustomSaveList.TryGetValue(vanillaEntity.PrefabName, out var maybeSaveList);
+
+                    if (!tryGetList)
+                    {
+                        return;
+                    }
+
+                    if (maybeSaveList != targetList)
+                    {
+                        return;
+                    }
                 }
 
                 if (targetList.Contains(vanillaEntity))
@@ -1022,8 +1041,8 @@ namespace Oxide.Plugins
                     if (!UnregisterPrefabInternal(recipe))
                     {
                         allGood = false;
-                    }
 
+                    }
                 }
 
                 Pool.FreeUnmanaged(ref customRecipes);
@@ -1083,8 +1102,6 @@ namespace Oxide.Plugins
 
                 var newGo = UnityEngine.Object.Instantiate(tryFindPrototype.gameObject, null, true);
 
-                newGo.SetActive(false);
-
                 var newEntity = newGo.GetComponent<BaseEntity>();
 
                 //we know entity won't be null because TryGetPreprocessed looks for an entity in first place
@@ -1097,17 +1114,34 @@ namespace Oxide.Plugins
                     }
                 }
 
+                //and again - because new entity could've been replaced!
+                newEntity = newGo.GetComponent<BaseEntity>();
+
                 AddToGameManifest(recipe.FullPrefabName, newGo, recipe.EnableInSpawnCommand);
 
                 AddToPreprocessed(recipe.FullPrefabName, newGo);
 
-                //var originalPrefabStringPoolID = newEntity.prefabID;
-                var modifiedPrefabStringPoolID = AddToStringPool(recipe.FullPrefabName);
+                if (recipe.BaseCombat != null)
+                {
+                    ApplyBaseCombatEntityProperties((BaseCombatEntity)newEntity, recipe.ShortPrefabName, recipe.BaseCombat);
+                }
 
+                var modifiedPrefabStringPoolID = AddToStringPool(recipe.FullPrefabName);
 
                 //MUST DISABLE VANILLA SAVING BECAUSE NOW IT HAS A NON-EXISTING PREFAB ID!
 
                 //in this case, it will help identify the modified prefab in the dictionary, given its full prefab name.
+
+                newEntity.prefabID = modifiedPrefabStringPoolID;
+                newEntity._prefabName = recipe.FullPrefabName;
+
+                ICustomEntity asInterface = (newEntity as ICustomEntity);
+
+                if (asInterface != null)
+                {
+                    //I think this is what we were missing!
+                    asInterface.SaveListInDataFile = data.CustomEntitySaveList;
+                }
 
                 if (recipe.SaveHandling == ModifiedSaveHandling.SaveInVanillaSaveList)
                 {
@@ -1117,28 +1151,31 @@ namespace Oxide.Plugins
                 {
                     newEntity.EnableSaving(false);
 
-                    //naughty reflection
-                    newEntity._prefabName = recipe.FullPrefabName;
-
-                    ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.Add(recipe.FullPrefabName, modifiedPrefabStringPoolID);
-
-
-                    //add the compo
-
-                    var newCompo = newGo.AddComponent<ModifiedBundleSaveBehaviour>();
-
-                    newCompo.RecipeFullPrefabName = recipe.FullPrefabName;
-
                     if (recipe.SaveHandling == ModifiedSaveHandling.SaveInBundleSaveList)
                     {
-                        ModifiedPrefabFullNameToCustomSaveList[recipe.FullPrefabName] = data.CustomEntitySaveList;
+                        ModifiedPrefabFullNameToModifiedPrefabIDHandledByBundles.Add(recipe.FullPrefabName, modifiedPrefabStringPoolID);
+
+
+                        ModifiedPrefabFullNameToCustomSaveList.Add(recipe.FullPrefabName, data.CustomEntitySaveList);
+
+                        //add the compo only if needed
+
+                        var newCompo = newGo.AddComponent<ModifiedBundleSaveBehaviour>();
+
+                        newCompo.RecipeFullPrefabName = recipe.FullPrefabName;
+
                         newCompo.AddToCustomSaveList = true;
                     }
-
                 }
 
+                if (asInterface != null)
+                {
+                    asInterface.OnCustomPrefabPrototypeEntityRegistered();
+                }
 
+                newGo.SetActive(false);
                 UnityEngine.Object.DontDestroyOnLoad(newGo);
+
 
                 if (!_cachedRecipes.Contains(recipe))
                 {
@@ -1147,8 +1184,6 @@ namespace Oxide.Plugins
 
                 return true;
             }
-
-
 
             private static bool RegisterPrefabCustom(CustomPrefabRecipe recipe, BinaryData data)
             {
@@ -1201,7 +1236,6 @@ namespace Oxide.Plugins
                 return true;
             }
 
-
             private static bool UnregisterPrefabInternal(GenericPrefabRecipe recipe)
             {
                 GameObject go;
@@ -1213,11 +1247,7 @@ namespace Oxide.Plugins
                     return false;
                 }
 
-                CustomPrefabRecipe recipeAsCustom = recipe as CustomPrefabRecipe;
-
-                RemoveFromPreProcessed(recipeFullPrefabName);
-                RemoveFromGameManifest(recipeFullPrefabName, recipe.EnableInSpawnCommand);
-                RemoveFromStringPool(recipeFullPrefabName);
+                //CustomPrefabRecipe recipeAsCustom = recipe as CustomPrefabRecipe;
 
                 ModifiedPrefabRecipe recipeAsModified = recipe as ModifiedPrefabRecipe;
 
@@ -1236,31 +1266,25 @@ namespace Oxide.Plugins
                         }
                     }
                 }
-
-                //kill the prototype                
+        
 
                 BaseEntity prototypeEntity = go.GetComponent<BaseEntity>();
 
-                if (recipeAsCustom != null)
+                (prototypeEntity as ICustomEntity)?.OnCustomPrefabPrototypeEntityUnregistered();
+
+                if (recipe.BaseCombat != null)
                 {
-                    (prototypeEntity as ICustomEntity).OnCustomPrefabPrototypeEntityUnregistered();
+                    BaseCombatEntity asBaseCombat = prototypeEntity as BaseCombatEntity;
 
-                    if (recipeAsCustom.BaseCombat != null)
+                    if (asBaseCombat != null)
                     {
-                        BaseCombatEntity asBaseCombat = prototypeEntity as BaseCombatEntity;
-
-                        if (asBaseCombat != null)
+                        if (asBaseCombat.baseProtection != null)
                         {
-                            if (asBaseCombat.baseProtection != null)
-                            {
-                                UnityEngine.Object.DestroyImmediate(asBaseCombat.baseProtection);
-                                asBaseCombat.baseProtection = null;
-                            }
+                            UnityEngine.Object.DestroyImmediate(asBaseCombat.baseProtection);
+                            asBaseCombat.baseProtection = null;
                         }
                     }
                 }
-
-                prototypeEntity.Kill(BaseNetworkable.DestroyMode.None);
 
                 var iterateOver = BaseNetworkable.serverEntities.OfType<BaseEntity>().ToArray();
 
@@ -1291,6 +1315,14 @@ namespace Oxide.Plugins
                     entity.Kill(BaseNetworkable.DestroyMode.None);
                     countKilled++;
                 }
+
+                //here! After the entity.Kill above doesn't need it any more, EH?!
+                UnityEngine.Object.DestroyImmediate(go);
+
+                //maybe here?!
+                RemoveFromPreProcessed(recipeFullPrefabName);
+                RemoveFromGameManifest(recipeFullPrefabName, recipe.EnableInSpawnCommand);
+                RemoveFromStringPool(recipeFullPrefabName);
 
                 if (_cachedRecipes.Contains(recipe))
                 {
@@ -1869,7 +1901,6 @@ namespace Oxide.Plugins
 
                                         if (asInterface != null)
                                         {
-
                                             using (MemoryStream customMemoryStream = new MemoryStream(4))
                                             {
                                                 using (BinaryWriter customWriter = new BinaryWriter(customMemoryStream))
@@ -1883,12 +1914,11 @@ namespace Oxide.Plugins
                                             }
 
                                             countCustom++;
+
                                         }
                                         else
                                         {
                                             //is it normal vanilla, or modified vanilla?
-
-
                                             countVanilla++;
                                         }
 
@@ -2220,11 +2250,14 @@ namespace Oxide.Plugins
             public readonly string FullPrefabName;
             public readonly bool EnableInSpawnCommand;
 
-            public GenericPrefabRecipe(string shortName, bool enableInSpawnCommand = true)
+            public readonly CustomPrefabBaseCombat BaseCombat;
+
+            public GenericPrefabRecipe(string shortName, bool enableInSpawnCommand = true, CustomPrefabBaseCombat baseCombat = null)
             {
                 ShortPrefabName = shortName;
                 FullPrefabName = SanitizedFullPrefabName(shortName);
                 EnableInSpawnCommand = enableInSpawnCommand;
+                BaseCombat = baseCombat;
             }
         }
 
@@ -2236,7 +2269,7 @@ namespace Oxide.Plugins
 
             public readonly ModifiedSaveHandling SaveHandling;
 
-            public ModifiedPrefabRecipe(string shortName, string originalFullPrefabName, Func<BaseEntity, bool> modificationFunction = null, bool enableInSpawnCommand = true, ModifiedSaveHandling saveHandling = ModifiedSaveHandling.DontSave) : base(shortName, enableInSpawnCommand)
+            public ModifiedPrefabRecipe(string shortName, string originalFullPrefabName, Func<BaseEntity, bool> modificationFunction = null, bool enableInSpawnCommand = true, CustomPrefabBaseCombat baseCombat = null, ModifiedSaveHandling saveHandling = ModifiedSaveHandling.DontSave) : base(shortName, enableInSpawnCommand, baseCombat)
             {
                 OriginalFullPrefabName = originalFullPrefabName;
                 ModificationFunction = modificationFunction;
@@ -2250,13 +2283,10 @@ namespace Oxide.Plugins
 
             public readonly Type EntityType;
 
-            public readonly CustomPrefabBaseCombat BaseCombat;
-
-            public CustomPrefabRecipe(string shortName, Type entityType, Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true) : base(shortName, enableInSpawnCommand)
+            public CustomPrefabRecipe(string shortName, Type entityType, Layer layer = Layer.Default, CustomPrefabBaseCombat baseCombat = null, bool enableInSpawnCommand = true) : base(shortName, enableInSpawnCommand, baseCombat)
             {
                 EntityType = entityType;
                 Layer = layer;
-                BaseCombat = baseCombat;
             }
 
         }
@@ -2400,13 +2430,12 @@ namespace Oxide.Plugins
 
                 if (!CustomPrefabs.ModifiedPrefabFullNameToCustomSaveList.TryGetValue(RecipeFullPrefabName, out entitySaveList))
                 {
-
                     goto DestroyStuff;
                 }
 
                 CustomPrefabs.EnsureMovedToCustomSaveListRecursivelyTopDown(modifiedEntity, entitySaveList);
 
-            DestroyStuff:
+                DestroyStuff:
 
                 Destroy(this);
             }
@@ -2436,11 +2465,12 @@ namespace Oxide.Plugins
 
             public static void AttachNewHandlerToCustomEntityIfNotPrototype(BaseEntity entity)
             {
-                BaseEntity tryPrototypeEntity = CustomPrefabs.TryGetPreprocessedPrototypeFromCustom(entity.PrefabName);
+                BaseEntity tryPrototypeEntity = CustomPrefabs.TryGetPreprocessedPrototypeFromCustom(entity.PrefabName); //and here, based on prefabID
 
                 if (tryPrototypeEntity == null)
                 {
                     //that means you, yourself, are the prototype
+
                     return;
                 }
 
@@ -3683,7 +3713,205 @@ namespace Oxide.Plugins
             return sb.ToString();
         }
 
-        public static NEW TryComponentReplacement<OLD, NEW>(GameObject go, bool onlyOneNewAllowed = true, bool printDebug = false) where OLD : Component where NEW : Component
+        public static bool FieldIsUnitySerialized(FieldInfo fi)
+        {
+            if (fi.IsPublic)
+            {
+                if (!fi.GetCustomAttributes<NonSerializedAttribute>(true).Any())
+                {
+                    return true;
+                }
+            }
+
+            if (fi.GetCustomAttributes<SerializeField>(true).Any())
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        public static void AssignComponentFieldValuesFromSourceToDestination<SOURCE, DESTINATION>(GameObject sourceGO, GameObject destinationGO, SOURCE sourceInstance, DESTINATION destinationInstance, out StringBuilder buildDebug, bool replaceReferencesInNewComponent = false, bool replaceReferencesInAllComponentsInHierarchy = false, bool printDebug = false) where SOURCE : Component where DESTINATION : Component
+        {
+            buildDebug = printDebug ? new StringBuilder() : null;
+
+            //idiot-proofing
+            if (sourceInstance == null)
+            {
+                sourceInstance = sourceGO.GetComponent<SOURCE>();
+            }
+
+            if (destinationInstance == null)
+            {
+                destinationInstance = destinationGO.GetComponent<DESTINATION>();
+            }
+
+            bool sourceAndDestinationGOAreTheSame = sourceGO == destinationGO;
+
+            var typeOfSource = typeof(SOURCE);
+            var typeofDestination = typeof(DESTINATION);
+
+            var fieldsOfSource = typeOfSource.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+            foreach (var fieldOfSource in fieldsOfSource)
+            {
+                /*
+                if (!FieldIsUnitySerialized(fieldOfSource))
+                {
+                    if (printDebug)
+                    {
+                        buildDebug.AppendLine($"WARNING: Field `{typeOfSource}::{fieldOfSource.Name} (type: {fieldOfSource.FieldType})` is NOT Unity serialized!");
+                    }
+                }*/
+
+                if (sourceAndDestinationGOAreTheSame)
+                {
+
+                }
+
+                if (fieldOfSource.IsLiteral)
+                {
+                    //ignore constants
+                    continue;
+                }
+
+                var sourceValue = fieldOfSource.GetValue(sourceInstance);
+
+                if (replaceReferencesInNewComponent)
+                {
+                    //is the original value a reference to the old component?
+                    if (sourceValue == sourceInstance)
+                    {
+                        if (printDebug)
+                        {
+                            buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_OTHER_COMPO, null, fieldOfSource.Name));
+                        }
+
+                        //here it doesn't matter if the source and destination GO are the same or not - we're always changing the destination instance with a self-reference
+
+                        fieldOfSource.SetValue(destinationInstance, destinationInstance);
+                    }
+                    else
+                    {
+                        goto JustSetValueFromOldToNew;
+                    }
+                }
+
+                JustSetValueFromOldToNew:
+
+                fieldOfSource.SetValue(destinationInstance, sourceValue);
+
+                if (printDebug)
+                {
+                    buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO, null, fieldOfSource.Name, sourceValue));
+                }
+            }
+
+            if (replaceReferencesInAllComponentsInHierarchy)
+            {
+                var sourceCompos = sourceGO.GetComponentsInChildren<Component>();
+
+                List<Component> destinationComposList = Pool.Get<List<Component>>();
+
+
+                if (!sourceAndDestinationGOAreTheSame)
+                {
+                    destinationGO.GetComponentsInChildren<Component>(destinationComposList);
+                }
+
+
+                //right now, we're assuming that source and destination GameObjects are the same!
+                //that assumption works only in the method TryComponentReplacement<OLD,NEW>.
+
+                
+                foreach (var sourceCompo in sourceCompos)
+                {
+                    //do not mess with the new compo and the old compo, only check if any other compos refer to the source compo!
+                    if (sourceCompo == destinationInstance || sourceCompo == sourceInstance)
+                    {
+                        continue;
+                    }
+
+                    var typeOfSourceCompo = sourceCompo.GetType();
+
+                    var compoFields = typeOfSourceCompo.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+
+                    foreach (var field in compoFields)
+                    {
+                        if (field.IsLiteral)
+                        {
+                            //ignore constants
+                            continue;
+                        }
+
+                        var compoFieldValue = field.GetValue(sourceCompo);
+
+                        if (compoFieldValue == sourceInstance)
+                        {
+                            if (printDebug)
+                            {
+                                buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_OTHER_COMPO, null, typeOfSourceCompo, field.Name));
+                            }
+
+                            if (sourceAndDestinationGOAreTheSame)
+                            {
+                                //easy clap, source and destination GO is the same, so it's safe to assume they share the component
+                                field.SetValue(sourceCompo, destinationInstance);
+                            }
+                            else
+                            {
+                                //we have different source and destination GOs,
+                                //so let's take first component of that type from the list,
+                                //use it, and remove it.
+
+                                int foundIndex = -1;
+
+                                for (var i = 0; i < destinationComposList.Count; i++)
+                                {
+                                    var destinationCompo = destinationComposList[i];
+
+                                    var typeOfDestinationCompo = destinationCompo.GetType();
+
+                                    if (typeOfDestinationCompo != typeOfSourceCompo)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (destinationCompo != null)
+                                    {
+                                        field.SetValue(destinationCompo, destinationInstance);
+
+                                        foundIndex = i;
+                                        break;
+                                    }
+                                }
+
+                                if (foundIndex == -1)
+                                {
+                                    if (printDebug)
+                                    {
+                                        buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_SUBCOMPO_NOT_FOUND_IN_DESTINATION, null, typeOfSourceCompo, field.Name));
+                                    }
+                                }
+                                else
+                                {
+                                    if (printDebug)
+                                    {
+                                        buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_FOUND_SELF_REFERENCE_OTHER_COMPO, null, typeOfSourceCompo, field.Name));
+                                    }
+                                    destinationComposList.RemoveAt(foundIndex);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Pool.FreeUnmanaged(ref destinationComposList);
+            }
+
+
+        }
+        
+        public static NEW TryComponentReplacement<OLD, NEW>(GameObject go, bool onlyOneNewAllowed = true, bool assignOldFieldsValuesToNew = true, bool replaceReferencesInNewComponent = false, bool replaceReferencesInAllComponentsInHierarchy = false, bool printDebug = false) where OLD : Component where NEW : Component
         {
             var typeofOld = typeof(OLD);
             var typeofNew = typeof(NEW);
@@ -3713,43 +3941,29 @@ namespace Oxide.Plugins
 
             var newComponent = go.AddComponent<NEW>();
 
+            if (!assignOldFieldsValuesToNew)
+            {
+                goto DestroyAndReturn;
+            }
+
             bool newIsSubclassOfOld = typeofNew.IsSubclassOf(typeofOld);
 
             if (!newIsSubclassOfOld)
             {
-                UnityEngine.Object.DestroyImmediate(oldComponent);
-
-                return newComponent;
+                goto DestroyAndReturn;
             }
 
             StringBuilder buildDebug = null;
 
-            if (printDebug)
-            {
-                buildDebug = new StringBuilder(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_HEADER, null, typeofNew, typeofOld));
-            }
-
-            //naughty reflection
-
-            var fields = typeofOld.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-            foreach (var field in fields)
-            {
-                var value = field.GetValue(oldComponent);
-                field.SetValue(newComponent, value);
-
-                if (printDebug)
-                {
-                    buildDebug.AppendLine(MSG(MSG_TRY_COMPO_REPLACE_DEBUG_FIELD_INFO, null, field.Name, value));
-                }
-            }
+            AssignComponentFieldValuesFromSourceToDestination(go, go, oldComponent, newComponent, out buildDebug, replaceReferencesInNewComponent, replaceReferencesInAllComponentsInHierarchy, printDebug);
 
             if (printDebug)
             {
                 Instance.PrintWarning(buildDebug.ToString());
             }
 
+            DestroyAndReturn:
             UnityEngine.Object.DestroyImmediate(oldComponent);
-
             return newComponent;
         }
 
