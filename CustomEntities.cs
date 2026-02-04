@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.17")]
+    [Info("Custom Entities", "Nikedemos", "1.0.18")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -2984,7 +2984,7 @@ namespace Oxide.Plugins
 
             }
 
-            public override float MaxVelocity()
+            public override float AntiHackVelocity()
             {
                 return 100000F;
             }
@@ -3214,7 +3214,7 @@ namespace Oxide.Plugins
 
             }
 
-            public override float MaxVelocity()
+            public override float AntiHackVelocity()
             {
                 return 100000F;
             }
