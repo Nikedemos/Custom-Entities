@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.18")]
+    [Info("Custom Entities", "Nikedemos", "1.0.19")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -1266,7 +1266,7 @@ namespace Oxide.Plugins
                         }
                     }
                 }
-        
+
 
                 BaseEntity prototypeEntity = go.GetComponent<BaseEntity>();
 
@@ -2349,7 +2349,7 @@ namespace Oxide.Plugins
             void Save(BaseNetworkable.SaveInfo info);
             void Load(BaseNetworkable.LoadInfo info);
 
-            void Kill(BaseNetworkable.DestroyMode destroyMode = BaseNetworkable.DestroyMode.None);
+            void Kill(BaseNetworkable.DestroyMode mode = BaseNetworkable.DestroyMode.None, bool callOnKilled = true);
 
             MemoryStream GetSaveCache();
 
@@ -2435,7 +2435,7 @@ namespace Oxide.Plugins
 
                 CustomPrefabs.EnsureMovedToCustomSaveListRecursivelyTopDown(modifiedEntity, entitySaveList);
 
-                DestroyStuff:
+            DestroyStuff:
 
                 Destroy(this);
             }
@@ -3796,7 +3796,7 @@ namespace Oxide.Plugins
                     }
                 }
 
-                JustSetValueFromOldToNew:
+            JustSetValueFromOldToNew:
 
                 fieldOfSource.SetValue(destinationInstance, sourceValue);
 
@@ -3822,7 +3822,7 @@ namespace Oxide.Plugins
                 //right now, we're assuming that source and destination GameObjects are the same!
                 //that assumption works only in the method TryComponentReplacement<OLD,NEW>.
 
-                
+
                 foreach (var sourceCompo in sourceCompos)
                 {
                     //do not mess with the new compo and the old compo, only check if any other compos refer to the source compo!
@@ -3910,7 +3910,7 @@ namespace Oxide.Plugins
 
 
         }
-        
+
         public static NEW TryComponentReplacement<OLD, NEW>(GameObject go, bool onlyOneNewAllowed = true, bool assignOldFieldsValuesToNew = true, bool replaceReferencesInNewComponent = false, bool replaceReferencesInAllComponentsInHierarchy = false, bool printDebug = false) where OLD : Component where NEW : Component
         {
             var typeofOld = typeof(OLD);
@@ -3962,7 +3962,7 @@ namespace Oxide.Plugins
                 Instance.PrintWarning(buildDebug.ToString());
             }
 
-            DestroyAndReturn:
+        DestroyAndReturn:
             UnityEngine.Object.DestroyImmediate(oldComponent);
             return newComponent;
         }
