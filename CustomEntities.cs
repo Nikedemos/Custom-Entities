@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.19")]
+    [Info("Custom Entities", "Nikedemos", "1.0.20")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -2326,7 +2326,7 @@ namespace Oxide.Plugins
 
             void OnDefaultInventoryFirstCreated();
 
-            bool DefaultInventoryItemFilter(Item item, int targetSlot);
+            bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot);
 
             void OnItemAddedOrRemoved(Item item, bool added);
 
@@ -2834,7 +2834,7 @@ namespace Oxide.Plugins
             public virtual bool EnableSavingToDiskByDefault => true;
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
             public virtual void OnDefaultInventoryDirty()
             {
 
@@ -2956,7 +2956,7 @@ namespace Oxide.Plugins
 
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player,Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
@@ -3174,7 +3174,7 @@ namespace Oxide.Plugins
 
             public virtual bool DefaultInventoryHandledByBaseType => true; //this is important!
 
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
