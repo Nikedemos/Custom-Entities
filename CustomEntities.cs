@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.20")]
+    [Info("Custom Entities", "Nikedemos", "1.0.21")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -2328,7 +2328,7 @@ namespace Oxide.Plugins
 
             bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot);
 
-            void OnItemAddedOrRemoved(Item item, bool added);
+            void OnItemAddedOrRemoved(Item item, bool added, BasePlayer player);
 
             void OnDefaultInventoryDirty();
 
@@ -2839,7 +2839,7 @@ namespace Oxide.Plugins
             {
 
             }
-            public virtual void OnItemAddedOrRemoved(Item item, bool added)
+            public virtual void OnItemAddedOrRemoved(Item item, bool added, BasePlayer player)
             {
 
             }
@@ -2962,7 +2962,7 @@ namespace Oxide.Plugins
             {
 
             }
-            public virtual void OnItemAddedOrRemoved(Item item, bool added)
+            public virtual void OnItemAddedOrRemoved(Item item, bool added, BasePlayer player)
             {
 
             }
@@ -3181,9 +3181,9 @@ namespace Oxide.Plugins
                 //not needed as the base invalidates network cache which was already done before calling this
                 //base.OnInventoryDirty();
             }
-            public override void OnItemAddedOrRemoved(Item item, bool added)
+            public override void OnItemAddedOrRemoved(Item item, bool added, BasePlayer player)
             {
-                base.OnItemAddedOrRemoved(item, added);
+                base.OnItemAddedOrRemoved(item, added, player);
             }
 
             public ItemContainer DefaultInventory
